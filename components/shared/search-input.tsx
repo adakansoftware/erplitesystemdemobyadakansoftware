@@ -10,6 +10,7 @@ type SearchInputProps = {
   inputClassName?: string
   ariaLabel?: string
   onFocus?: () => void
+  onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>
   autoFocus?: boolean
 }
 
@@ -21,6 +22,7 @@ export function SearchInput({
   inputClassName,
   ariaLabel,
   onFocus,
+  onKeyDown,
   autoFocus,
 }: SearchInputProps) {
   return (
@@ -32,6 +34,7 @@ export function SearchInput({
         placeholder={placeholder}
         aria-label={ariaLabel ?? placeholder}
         onFocus={onFocus}
+        onKeyDown={onKeyDown}
         autoFocus={autoFocus}
         autoComplete="off"
         spellCheck={false}

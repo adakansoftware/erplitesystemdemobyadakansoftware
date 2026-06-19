@@ -1,7 +1,8 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { useTheme } from 'next-themes'
 import {
   Bell,
@@ -67,8 +68,39 @@ const currentUser = {
 export function Topbar() {
   const { resolvedTheme, setTheme } = useTheme()
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [searchValue, setSearchValue] = useState('')
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+
+  useEffect(() => {
+    if (pathname === '/arama') {
+      setSearchValue(searchParams.get('q') ?? '')
+      return
+    }
+
+    setSearchValue('')
+  }, [pathname, searchParams])
+
+  function submitSearch() {
+    const nextValue = searchValue.trim()
+
+    if (!nextValue) {
+      router.push('/arama')
+      return
+    }
+
+    router.push(`/arama?q=${encodeURIComponent(nextValue)}`)
+  }
+
+  function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') {
+      return
+    }
+
+    event.preventDefault()
+    submitSearch()
+  }
 
   return (
     <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md">
@@ -80,6 +112,7 @@ export function Topbar() {
           <SearchInput
             value={searchValue}
             onChange={setSearchValue}
+            onKeyDown={handleSearchKeyDown}
             placeholder="Urun, fatura, teklif veya cari ara..."
             inputClassName="h-9 rounded-lg"
           />
@@ -227,6 +260,7 @@ export function Topbar() {
           <SearchInput
             value={searchValue}
             onChange={setSearchValue}
+            onKeyDown={handleSearchKeyDown}
             autoFocus
             placeholder="ERP icinde ara..."
             inputClassName="h-9 rounded-lg"
