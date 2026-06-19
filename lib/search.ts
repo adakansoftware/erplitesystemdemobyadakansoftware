@@ -1,10 +1,23 @@
 import { currentAccounts } from '@/lib/data/accounts'
-import { deals, leads, tasks, companies, contacts } from '@/lib/data/crm'
+import { companies, contacts, deals, leads, tasks } from '@/lib/data/crm'
 import { transactions } from '@/lib/data/finance'
 import { invoices, invoiceStatusMeta, invoiceTotals } from '@/lib/data/invoices'
-import { quotations, quotationStatusMeta, quotationTotals } from '@/lib/data/quotations'
-import { products, getStockStatus } from '@/lib/data/products'
+import {
+  quotations,
+  quotationStatusMeta,
+  quotationTotals,
+} from '@/lib/data/quotations'
+import { getStockStatus, products } from '@/lib/data/products'
+import type { BadgeVariant } from '@/lib/ui-meta'
 import { formatCurrency } from '@/lib/ui-meta'
+
+type SearchModuleKey =
+  | 'urunler'
+  | 'faturalar'
+  | 'teklifler'
+  | 'cari'
+  | 'crm'
+  | 'finans'
 
 export type SearchResult = {
   id: string
@@ -12,23 +25,9 @@ export type SearchResult = {
   subtitle: string
   href: string
   module: string
-  moduleKey:
-    | 'urunler'
-    | 'faturalar'
-    | 'teklifler'
-    | 'cari'
-    | 'crm'
-    | 'finans'
+  moduleKey: SearchModuleKey
   badge?: string
-  badgeVariant?:
-    | 'default'
-    | 'secondary'
-    | 'destructive'
-    | 'success'
-    | 'warning'
-    | 'info'
-    | 'outline'
-    | 'ghost'
+  badgeVariant?: BadgeVariant
   score: number
   searchableText: string
 }
@@ -39,6 +38,10 @@ function normalize(value: string) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
+}
+
+function joinMeta(...parts: Array<string | number>) {
+  return parts.filter(Boolean).join(' - ')
 }
 
 function scoreMatch(query: string, searchableText: string) {
@@ -71,7 +74,7 @@ function buildSearchIndex(): SearchResult[] {
     return {
       id: product.id,
       title: product.name,
-      subtitle: `${product.sku} · ${product.brand} · ${product.category}`,
+      subtitle: joinMeta(product.sku, product.brand, product.category),
       href: `/urunler/${product.id}`,
       module: 'Urunler',
       moduleKey: 'urunler',
@@ -97,7 +100,7 @@ function buildSearchIndex(): SearchResult[] {
     return {
       id: invoice.id,
       title: invoice.id,
-      subtitle: `${invoice.customer} · ${formatCurrency(total)}`,
+      subtitle: joinMeta(invoice.customer, formatCurrency(total)),
       href: `/faturalar/${invoice.id}`,
       module: 'Faturalar',
       moduleKey: 'faturalar',
@@ -120,7 +123,7 @@ function buildSearchIndex(): SearchResult[] {
     return {
       id: quotation.id,
       title: quotation.id,
-      subtitle: `${quotation.customer} · ${formatCurrency(total)}`,
+      subtitle: joinMeta(quotation.customer, formatCurrency(total)),
       href: `/teklifler/${quotation.id}`,
       module: 'Teklifler',
       moduleKey: 'teklifler',
@@ -139,8 +142,12 @@ function buildSearchIndex(): SearchResult[] {
   const accountResults: SearchResult[] = currentAccounts.map((account) => ({
     id: account.id,
     title: account.name,
-    subtitle: `${account.taxNumber} · ${account.city} · ${formatCurrency(account.balance)}`,
-    href: '/cari-hesaplar',
+    subtitle: joinMeta(
+      account.taxNumber,
+      account.city,
+      formatCurrency(account.balance),
+    ),
+    href: `/cari-hesaplar#${account.id}`,
     module: 'Cari Hesaplar',
     moduleKey: 'cari',
     badge: account.type === 'customer' ? 'Musteri' : 'Tedarikci',
@@ -159,8 +166,8 @@ function buildSearchIndex(): SearchResult[] {
   const leadResults: SearchResult[] = leads.map((lead) => ({
     id: lead.id,
     title: lead.name,
-    subtitle: `${lead.company} · ${formatCurrency(lead.value)}`,
-    href: '/leads',
+    subtitle: joinMeta(lead.company, formatCurrency(lead.value)),
+    href: `/leads#${lead.id}`,
     module: 'CRM',
     moduleKey: 'crm',
     badge: 'Lead',
@@ -178,8 +185,8 @@ function buildSearchIndex(): SearchResult[] {
   const dealResults: SearchResult[] = deals.map((deal) => ({
     id: deal.id,
     title: deal.title,
-    subtitle: `${deal.customer} · ${formatCurrency(deal.value)}`,
-    href: '/anlasmalar',
+    subtitle: joinMeta(deal.customer, formatCurrency(deal.value)),
+    href: `/anlasmalar#${deal.id}`,
     module: 'CRM',
     moduleKey: 'crm',
     badge: 'Anlasma',
@@ -197,8 +204,8 @@ function buildSearchIndex(): SearchResult[] {
   const companyResults: SearchResult[] = companies.map((company) => ({
     id: company.id,
     title: company.name,
-    subtitle: `${company.sector} · ${company.city}`,
-    href: '/firmalar',
+    subtitle: joinMeta(company.sector, company.city),
+    href: `/firmalar#${company.id}`,
     module: 'CRM',
     moduleKey: 'crm',
     badge: 'Firma',
@@ -215,8 +222,8 @@ function buildSearchIndex(): SearchResult[] {
   const contactResults: SearchResult[] = contacts.map((contact) => ({
     id: contact.id,
     title: contact.name,
-    subtitle: `${contact.company} · ${contact.title}`,
-    href: '/musteriler',
+    subtitle: joinMeta(contact.company, contact.title),
+    href: `/musteriler#${contact.id}`,
     module: 'CRM',
     moduleKey: 'crm',
     badge: 'Kontak',
@@ -235,8 +242,8 @@ function buildSearchIndex(): SearchResult[] {
   const taskResults: SearchResult[] = tasks.map((task) => ({
     id: task.id,
     title: task.title,
-    subtitle: `${task.related} · ${task.owner}`,
-    href: '/gorevler',
+    subtitle: joinMeta(task.related, task.owner),
+    href: `/gorevler#${task.id}`,
     module: 'CRM',
     moduleKey: 'crm',
     badge: task.done ? 'Tamamlandi' : 'Acik',
@@ -254,8 +261,8 @@ function buildSearchIndex(): SearchResult[] {
   const transactionResults: SearchResult[] = transactions.map((transaction) => ({
     id: transaction.id,
     title: transaction.description,
-    subtitle: `${transaction.account} · ${formatCurrency(transaction.amount)}`,
-    href: '/kasa-banka',
+    subtitle: joinMeta(transaction.account, formatCurrency(transaction.amount)),
+    href: `/kasa-banka#${transaction.id}`,
     module: 'Finans',
     moduleKey: 'finans',
     badge: transaction.type === 'income' ? 'Gelir' : 'Gider',

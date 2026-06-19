@@ -90,7 +90,11 @@ export default function FinancePage() {
             {transactions.map((transaction) => {
               const meta = transactionMeta[transaction.type]
               return (
-                <TableRow key={transaction.id}>
+                <TableRow
+                  key={transaction.id}
+                  id={transaction.id}
+                  className="scroll-mt-24"
+                >
                   <TableCell className="pl-6 font-medium">{transaction.id}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDate(transaction.date)}

@@ -41,6 +41,8 @@ export function SectionCard({
   action,
   footer,
   contentClassName,
+  className,
+  id,
   children,
 }: {
   title: string
@@ -48,10 +50,12 @@ export function SectionCard({
   action?: React.ReactNode
   footer?: React.ReactNode
   contentClassName?: string
+  className?: string
+  id?: string
   children: React.ReactNode
 }) {
   return (
-    <Card>
+    <Card id={id} className={className}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         {description ? <CardDescription>{description}</CardDescription> : null}

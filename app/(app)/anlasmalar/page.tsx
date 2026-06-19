@@ -27,6 +27,8 @@ export default function DealsPage() {
           return (
             <SectionCard
               key={deal.id}
+              id={deal.id}
+              className="scroll-mt-24"
               title={deal.title}
               description={deal.customer}
               contentClassName="space-y-3"

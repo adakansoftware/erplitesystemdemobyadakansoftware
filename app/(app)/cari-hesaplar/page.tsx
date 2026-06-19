@@ -64,7 +64,11 @@ export default function CurrentAccountsPage() {
               {currentAccounts.map((account) => {
                 const meta = balanceMeta(account.balance)
                 return (
-                  <TableRow key={account.id}>
+                  <TableRow
+                    key={account.id}
+                    id={account.id}
+                    className="scroll-mt-24"
+                  >
                     <TableCell className="pl-6">
                       <div className="flex flex-col">
                         <span className="font-medium">{account.name}</span>

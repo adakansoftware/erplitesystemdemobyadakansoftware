@@ -31,6 +31,8 @@ export default function CustomersPage() {
           return (
             <SectionCard
               key={customer.id}
+              id={customer.id}
+              className="scroll-mt-24"
               title={customer.name}
               description={`${customer.city} - ${customer.phone}`}
               contentClassName="space-y-3"
@@ -57,6 +59,30 @@ export default function CustomersPage() {
           )
         })}
       </div>
+
+      <SectionCard
+        title="Kontak Rehberi"
+        description="Musterilerle baglantili kisi ve unvan listesi"
+        contentClassName="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+      >
+        {contacts.map((contact) => (
+          <div
+            key={contact.id}
+            id={contact.id}
+            className="scroll-mt-24 rounded-lg border p-4"
+          >
+            <p className="text-sm font-medium">{contact.name}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {contact.company}
+            </p>
+            <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+              <p>{contact.title}</p>
+              <p>{contact.email}</p>
+              <p>{contact.phone}</p>
+            </div>
+          </div>
+        ))}
+      </SectionCard>
     </>
   )
 }

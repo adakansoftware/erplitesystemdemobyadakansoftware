@@ -23,6 +23,8 @@ export default function CompaniesPage() {
         {companies.map((company) => (
           <SectionCard
             key={company.id}
+            id={company.id}
+            className="scroll-mt-24"
             title={company.name}
             description={`${company.sector} - ${company.city}`}
             contentClassName="grid gap-3 md:grid-cols-2"

@@ -27,6 +27,8 @@ export default function TasksPage() {
           return (
             <SectionCard
               key={task.id}
+              id={task.id}
+              className="scroll-mt-24"
               title={task.title}
               description={task.related}
               contentClassName="space-y-3"

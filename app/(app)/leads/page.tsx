@@ -50,7 +50,11 @@ export default function LeadsPage() {
             {leads.map((lead) => {
               const meta = leadStatusMeta[lead.status]
               return (
-                <TableRow key={lead.id}>
+                <TableRow
+                  key={lead.id}
+                  id={lead.id}
+                  className="scroll-mt-24"
+                >
                   <TableCell className="pl-6">
                     <div className="flex flex-col">
                       <span className="font-medium">{lead.name}</span>
