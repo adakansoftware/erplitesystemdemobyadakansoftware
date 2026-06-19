@@ -79,10 +79,10 @@ export function CrmSidebar() {
       <SidebarFooter className="border-t border-sidebar-border">
         <div className="rounded-xl bg-sidebar-accent p-3">
           <p className="text-xs font-medium text-sidebar-accent-foreground">
-            ERP Lite Demo
+            Adakan ERP Lite
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Tum moduller ornek verilerle calisan arayuz onizlemesidir.
+            Satis, stok, finans ve operasyon modulleri tek panelde yonetilir.
           </p>
         </div>
       </SidebarFooter>

@@ -11,7 +11,7 @@ export function StatCard({
   icon: Icon,
   hint,
 }: {
-  title: string
+  title?: string
   label?: string
   value: string
   change?: string
@@ -19,7 +19,7 @@ export function StatCard({
   icon?: LucideIcon
   hint?: string
 }) {
-  const heading = label ?? title
+  const heading = label ?? title ?? ''
 
   return (
     <Card className="gap-0">

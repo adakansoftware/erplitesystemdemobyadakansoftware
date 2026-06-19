@@ -48,7 +48,7 @@ export default function QuotationsPage() {
 
       <SectionCard
         title="Teklif Listesi"
-        description="Demo satis operasyonu icin hazirlanan teklif kartlari"
+        description="Musterilere giden tekliflerin durum ve toplam tutar takibi"
         contentClassName="px-0"
       >
         <Table>

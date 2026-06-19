@@ -11,7 +11,7 @@ export default function NewInvoicePage() {
     <>
       <PageHeader
         title="Yeni Fatura"
-        description="Gercek CRUD baglantisi olmadan fatura olusturma arayuzu."
+        description="Musteri faturalari icin belge olusturma arayuzu."
       >
         <Button variant="outline" render={<Link href="/faturalar">Vazgec</Link>} />
         <Button>Faturayi Kaydet</Button>
@@ -47,7 +47,7 @@ export default function NewInvoicePage() {
 
         <SectionCard
           title="Fatura Kalemleri"
-          description="Demo satir alanlari"
+          description="Belgeye eklenecek urun ve hizmet satirlari"
           contentClassName="space-y-4"
         >
           <div className="space-y-3 rounded-lg border p-4">

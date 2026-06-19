@@ -71,7 +71,7 @@ export default function FinancePage() {
 
       <SectionCard
         title="Son Hareketler"
-        description="Gelir ve gider kayitlarinin statik onizlemesi"
+        description="Gelir ve gider kayitlarinin guncel hareket listesi"
         contentClassName="px-0"
       >
         <Table>

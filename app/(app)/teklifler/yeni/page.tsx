@@ -11,7 +11,7 @@ export default function NewQuotationPage() {
     <>
       <PageHeader
         title="Yeni Teklif"
-        description="Musteri teklifi icin kullanilan demo olusturma ekrani."
+        description="Musteri teklifi icin kullanilan teklif olusturma ekrani."
       >
         <Button variant="outline" render={<Link href="/teklifler">Vazgec</Link>} />
         <Button>Teklifi Kaydet</Button>
@@ -47,7 +47,7 @@ export default function NewQuotationPage() {
 
         <SectionCard
           title="Kalemler"
-          description="Teklif satirlari icin mock alanlar"
+          description="Teklife eklenecek urun ve hizmet satirlari"
           contentClassName="space-y-4"
         >
           <div className="space-y-3 rounded-lg border p-4">

@@ -45,7 +45,7 @@ export default function InvoicesPage() {
 
       <SectionCard
         title="Fatura Listesi"
-        description="Satis operasyonu icin uretilmis statik fatura kayitlari"
+        description="Satis faturalarinin belge, vade ve tahsilat durumu"
         contentClassName="px-0"
       >
         <Table>

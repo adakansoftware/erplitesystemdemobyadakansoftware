@@ -13,10 +13,9 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Adakan ERP Lite - Isletme Yonetim Sistemi',
+  title: 'Adakan ERP Lite - Isletme Yonetim Platformu',
   description:
-    'CRM uzerine kurulu modern ERP Lite. Urun, stok, teklif, fatura, kasa, cari ve raporlar tek panelde.',
-  generator: 'v0.app',
+    'Adakan ERP Lite; urun, stok, teklif, fatura, kasa, cari ve raporlama sureclerini tek panelde yonetir.',
 }
 
 export const viewport: Viewport = {

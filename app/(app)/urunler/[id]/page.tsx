@@ -31,7 +31,7 @@ export default async function ProductDetailPage({
     <>
       <PageHeader
         title={product.name}
-        description={`${product.sku} kodlu urun kartinin statik detay gorunumu.`}
+        description={`${product.sku} kodlu urun kartinin detay gorunumu.`}
       >
         <Button variant="outline" render={<Link href="/stok">Stok Hareketi</Link>}>
           <Warehouse data-icon="inline-start" />

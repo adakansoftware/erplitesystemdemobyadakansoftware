@@ -30,7 +30,7 @@ export default async function InvoiceDetailPage({
     <>
       <PageHeader
         title={invoice.id}
-        description={`${invoice.customer} icin duzenlenen faturanin statik detay ekrani.`}
+        description={`${invoice.customer} icin duzenlenen faturanin detay ekrani.`}
       >
         <Button variant="outline" render={<Link href="/faturalar">Listeye Don</Link>} />
         <Button render={<Link href="/faturalar/yeni">Kopyala</Link>} />

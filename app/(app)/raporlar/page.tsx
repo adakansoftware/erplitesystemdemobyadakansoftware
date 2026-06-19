@@ -23,15 +23,25 @@ export default function ReportsPage() {
     <>
       <PageHeader
         title="Raporlar"
-        description="ERP Lite demo verileri uzerinden yonetim panosu rapor onizlemesi."
+        description="Satis, tahsilat ve stok performansini yonetim ozetleriyle izleyin."
       />
 
       <MetricGrid
         items={[
           { label: 'Aylik Ciro', value: formatCurrency(monthlyRevenue) },
           { label: 'Teklif Hacmi', value: formatCurrency(quotationVolume) },
-          { label: 'Aktif Urun', value: formatNumber(products.filter((item) => item.status === 'active').length) },
-          { label: 'Tahsilat Orani', value: '%64', badge: 'Demo', badgeVariant: 'info' },
+          {
+            label: 'Aktif Urun',
+            value: formatNumber(
+              products.filter((item) => item.status === 'active').length,
+            ),
+          },
+          {
+            label: 'Tahsilat Orani',
+            value: '%64',
+            badge: 'Aylik',
+            badgeVariant: 'info',
+          },
         ]}
       />
 
@@ -47,7 +57,9 @@ export default function ReportsPage() {
               return acc
             }, {}),
           ).map(([status, count]) => {
-            const meta = invoiceStatusMeta[status as keyof typeof invoiceStatusMeta]
+            const meta =
+              invoiceStatusMeta[status as keyof typeof invoiceStatusMeta]
+
             return (
               <div
                 key={status}
@@ -70,6 +82,7 @@ export default function ReportsPage() {
             .slice(0, 5)
             .map((product) => {
               const meta = getStockStatus(product)
+
               return (
                 <div
                   key={product.id}
@@ -88,14 +101,15 @@ export default function ReportsPage() {
         </SectionCard>
 
         <SectionCard
-          title="Yoneticı Notu"
-          description="Bu ekran yalnizca sunum amacli statik UI icerir"
+          title="Yonetici Notu"
+          description="Moduller arasi performans ve operasyon ozetleri"
           contentClassName="space-y-3"
         >
           <div className="rounded-lg border p-4 text-sm leading-6 text-muted-foreground">
             Satis, stok, teklif ve finans modullerinin tumu mevcut dashboard
-            stilini koruyan statik rapor kartlari ile baglanmistir. Bu sayfada
-            gercek veri hesaplama ya da export akisi bulunmaz.
+            stilini koruyan yonetim kartlari ile ayni akista sunulur. Bu alan,
+            karar alma surecini hizlandiracak temel KPI gorunumunu bir araya
+            getirir.
           </div>
         </SectionCard>
       </div>

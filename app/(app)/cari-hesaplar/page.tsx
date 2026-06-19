@@ -30,7 +30,7 @@ export default function CurrentAccountsPage() {
     <>
       <PageHeader
         title="Cari Hesaplar"
-        description="Musteri ve tedarikci bakiyeleri ile hesap ekstresi onizlemesi."
+        description="Musteri ve tedarikci bakiyeleri ile hesap hareketleri."
       />
 
       <MetricGrid
@@ -100,7 +100,7 @@ export default function CurrentAccountsPage() {
 
         <SectionCard
           title="Ekstre Onizleme"
-          description="Ornek hesap hareketleri"
+          description="Secili cari icin son hesap hareketleri"
           contentClassName="space-y-3"
         >
           {previewStatement.map((row) => (

@@ -35,7 +35,7 @@ export default async function QuotationDetailPage({
     <>
       <PageHeader
         title={quotation.id}
-        description={`${quotation.customer} icin hazirlanan teklifin statik detay gorunumu.`}
+        description={`${quotation.customer} icin hazirlanan teklifin detay gorunumu.`}
       >
         <Button variant="outline" render={<Link href="/teklifler">Listeye Don</Link>} />
         <Button render={<Link href="/teklifler/yeni">Kopyala</Link>} />

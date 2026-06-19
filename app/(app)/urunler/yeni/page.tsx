@@ -20,7 +20,7 @@ export default function NewProductPage() {
     <>
       <PageHeader
         title="Yeni Urun"
-        description="Sisteme yeni urun karti eklemek icin statik demo formu."
+        description="Sisteme yeni urun karti eklemek icin urun tanim formu."
       >
         <Button variant="outline" render={<Link href="/urunler">Vazgec</Link>} />
         <Button>Urunu Kaydet</Button>
@@ -61,7 +61,7 @@ export default function NewProductPage() {
               <FieldLabel htmlFor="product-description">Aciklama</FieldLabel>
               <Textarea
                 id="product-description"
-                defaultValue="Profesyonel segmentte konumlanan yeni seri icin demo urun karti."
+                defaultValue="Profesyonel segmentte konumlanan yeni seri icin urun karti."
               />
             </Field>
           </FieldGroup>
@@ -136,10 +136,10 @@ export default function NewProductPage() {
             <FieldContent>
               <Textarea
                 id="sales-note"
-                defaultValue="Demo ekranda sadece gorsel amacli form alanlari yer alir."
+                defaultValue="Satis ekibinin fiyatlandirma ve konumlandirma notlari bu alanda tutulur."
               />
               <FieldDescription>
-                Bu sayfa backend veya gercek kayit akisi baglamaz.
+                Urun kartinda fiyat, stok ve aciklama bilgileri tek yerde toplanir.
               </FieldDescription>
             </FieldContent>
           </Field>

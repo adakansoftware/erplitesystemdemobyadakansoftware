@@ -31,7 +31,7 @@ export default function LeadsPage() {
 
       <SectionCard
         title="Lead Listesi"
-        description="Demo CRM akisi icin ornek kayitlar"
+        description="Yeni kazanilabilecek musteriler ve ilk temas kayitlari"
         contentClassName="px-0"
       >
         <Table>

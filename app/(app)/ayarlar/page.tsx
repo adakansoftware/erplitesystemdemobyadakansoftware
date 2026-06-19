@@ -9,7 +9,7 @@ export default function SettingsPage() {
     <>
       <PageHeader
         title="Ayarlar"
-        description="Sistem genel ayarlari icin statik tercih ekrani."
+        description="Sistem genel ayarlari ve operasyon tercihleri."
       />
 
       <div className="grid gap-4 xl:grid-cols-3">
@@ -21,7 +21,7 @@ export default function SettingsPage() {
           <FieldGroup>
             <Field>
               <FieldLabel htmlFor="company-name">Firma Unvani</FieldLabel>
-              <Input id="company-name" defaultValue="Adakan ERP Demo San. ve Tic. Ltd. Sti." />
+              <Input id="company-name" defaultValue="Adakan Yazilim San. ve Tic. Ltd. Sti." />
             </Field>
             <div className="grid gap-4 md:grid-cols-2">
               <Field>
@@ -67,7 +67,7 @@ export default function SettingsPage() {
             <div>
               <p className="text-sm font-medium">Gun sonu ozet maili</p>
               <p className="text-xs text-muted-foreground">
-                Yalnizca demo gorunumu
+                Gunluk ozet ve yonetim bilgilendirmesi
               </p>
             </div>
             <Switch />

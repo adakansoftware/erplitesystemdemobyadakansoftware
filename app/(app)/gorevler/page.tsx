@@ -9,7 +9,7 @@ export default function TasksPage() {
     <>
       <PageHeader
         title="Gorevler"
-        description="Takip, satis ve operasyon gorevleri icin statik liste gorunumu."
+        description="Takip, satis ve operasyon gorevlerini ekip bazinda yonetin."
       />
 
       <MetricGrid
