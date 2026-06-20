@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { api } from '@/lib/api/client'
 
 export type DemoUser = {
   id: string
@@ -10,37 +11,22 @@ export type DemoUser = {
   initials: string
 }
 
-type StoredUser = DemoUser & { password: string }
+function toInitials(name: string) {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('')
+}
 
-const USERS_KEY = 'erp-lite-demo-users'
-const SESSION_KEY = 'erp-lite-session'
-
-const defaultUsers: StoredUser[] = [
-  {
-    id: 'USR-001',
-    name: 'Mehmet Adakan',
-    email: 'admin@demo.com',
-    password: 'demo123',
-    role: 'admin',
-    initials: 'MA',
-  },
-  {
-    id: 'USR-002',
-    name: 'Selin Kaya',
-    email: 'satis@demo.com',
-    password: 'demo123',
-    role: 'sales',
-    initials: 'SK',
-  },
-]
-
-function stripPassword(user: StoredUser): DemoUser {
+function mapUser(payload: any): DemoUser {
   return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    initials: user.initials,
+    id: payload.id ?? '',
+    name: payload.name ?? 'Demo Kullanici',
+    email: payload.email ?? 'admin@demo.com',
+    role: payload.role === 'sales' ? 'sales' : 'admin',
+    initials: toInitials(payload.name ?? 'Demo Kullanici'),
   }
 }
 
@@ -49,66 +35,58 @@ export function useAuth() {
   const [isReady, setIsReady] = useState(false)
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
+    let cancelled = false
 
-    const existingUsers = window.localStorage.getItem(USERS_KEY)
-    if (!existingUsers) {
-      window.localStorage.setItem(USERS_KEY, JSON.stringify(defaultUsers))
-    }
+    void api
+      .get<any>('/auth/me')
+      .then((user) => {
+        if (!cancelled) {
+          setCurrentUser(mapUser(user))
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCurrentUser(null)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsReady(true)
+        }
+      })
 
-    const rawSession = window.localStorage.getItem(SESSION_KEY)
-    if (rawSession) {
-      try {
-        setCurrentUser(JSON.parse(rawSession) as DemoUser)
-      } catch {
-        window.localStorage.removeItem(SESSION_KEY)
-      }
+    return () => {
+      cancelled = true
     }
-
-    setIsReady(true)
   }, [])
 
-  const api = useMemo(
+  return useMemo(
     () => ({
       currentUser,
       isReady,
       isAuthenticated: Boolean(currentUser),
-      login: (email: string, password: string) => {
-        if (typeof window === 'undefined') {
-          return { ok: false as const, message: 'Tarayici kullanilamiyor.' }
+      login: async (email: string, password: string) => {
+        try {
+          const result = await api.post<any>('/auth/login', { email, password })
+          const user = mapUser(result.user)
+          setCurrentUser(user)
+          return { ok: true as const, user }
+        } catch (error) {
+          return {
+            ok: false as const,
+            message:
+              error instanceof Error ? error.message : 'E-posta veya sifre hatali.',
+          }
         }
-
-        const users = JSON.parse(
-          window.localStorage.getItem(USERS_KEY) ?? JSON.stringify(defaultUsers),
-        ) as StoredUser[]
-
-        const matchedUser = users.find(
-          (user) =>
-            user.email.toLocaleLowerCase('tr-TR') ===
-              email.toLocaleLowerCase('tr-TR') && user.password === password,
-        )
-
-        if (!matchedUser) {
-          return { ok: false as const, message: 'E-posta veya sifre hatali.' }
-        }
-
-        const nextSession = stripPassword(matchedUser)
-        window.localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession))
-        setCurrentUser(nextSession)
-
-        return { ok: true as const, user: nextSession }
       },
-      logout: () => {
-        if (typeof window !== 'undefined') {
-          window.localStorage.removeItem(SESSION_KEY)
+      logout: async () => {
+        try {
+          await api.post('/auth/logout', {})
+        } finally {
+          setCurrentUser(null)
         }
-        setCurrentUser(null)
       },
     }),
     [currentUser, isReady],
   )
-
-  return api
 }

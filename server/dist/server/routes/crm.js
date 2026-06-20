@@ -146,6 +146,11 @@ exports.crmRoutes.patch('/tasks/:id/toggle', async (c) => {
         .where((0, drizzle_orm_1.eq)(schema_1.tasks.id, id));
     return (0, http_1.ok)(c, { id, done: !task?.done });
 });
+exports.crmRoutes.delete('/tasks/:id', async (c) => {
+    const id = c.req.param('id');
+    await client_1.db.delete(schema_1.tasks).where((0, drizzle_orm_1.eq)(schema_1.tasks.id, id));
+    return (0, http_1.ok)(c, { id });
+});
 exports.crmRoutes.get('/pipeline', async (c) => {
     const items = await client_1.db.select().from(schema_1.deals);
     const grouped = items.reduce((acc, item) => {

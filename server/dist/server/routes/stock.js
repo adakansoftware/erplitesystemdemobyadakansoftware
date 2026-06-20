@@ -13,7 +13,7 @@ const movementSchema = zod_1.z.object({
     productId: zod_1.z.string(),
     warehouseId: zod_1.z.string().optional().nullable(),
     type: zod_1.z.enum(['in', 'out', 'transfer', 'adjustment']),
-    qty: zod_1.z.coerce.number().positive(),
+    qty: zod_1.z.coerce.number().refine((value) => value !== 0, 'Qty must not be zero'),
     note: zod_1.z.string().optional().nullable(),
     unitCost: zod_1.z.coerce.number().optional(),
 });
@@ -38,13 +38,31 @@ exports.stockRoutes.get('/movements', async (c) => {
         .select()
         .from(schema_1.stockMovements)
         .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined);
-    return (0, http_1.ok)(c, result);
+    const [productItems, warehouseItems] = await Promise.all([
+        client_1.db.select().from(schema_1.products),
+        client_1.db.select().from(schema_1.warehouses),
+    ]);
+    const productMap = new Map(productItems.map((product) => [product.id, product]));
+    const warehouseMap = new Map(warehouseItems.map((warehouse) => [warehouse.id, warehouse.name]));
+    return (0, http_1.ok)(c, result.map((movement) => {
+        const product = productMap.get(movement.productId);
+        return {
+            ...movement,
+            qty: Number(movement.qty),
+            product: product?.name ?? movement.productId,
+            sku: product?.sku ?? '',
+            warehouse: movement.warehouseId ? warehouseMap.get(movement.warehouseId) ?? movement.warehouseId : 'Merkez Depo',
+            relatedDoc: movement.relatedDocId,
+            user: 'ERP Lite',
+            date: movement.createdAt.toISOString().slice(0, 10),
+        };
+    }));
 });
 exports.stockRoutes.post('/movements', (0, validate_1.validate)(movementSchema), async (c) => {
     const body = c.get('validatedBody');
     if (body.type === 'out') {
         const currentStock = await (0, rules_1.getProductStock)(body.productId);
-        if (currentStock < body.qty) {
+        if (currentStock < Math.abs(body.qty)) {
             return (0, http_1.fail)(c, 422, 'Insufficient stock');
         }
     }
@@ -64,9 +82,16 @@ exports.stockRoutes.post('/movements', (0, validate_1.validate)(movementSchema),
     return (0, http_1.created)(c, movement);
 });
 exports.stockRoutes.get('/summary', async (c) => {
-    const items = await client_1.db.select().from(schema_1.products);
+    const [items, categories] = await Promise.all([
+        client_1.db.select().from(schema_1.products),
+        client_1.db.select().from(schema_1.productCategories),
+    ]);
+    const categoryMap = new Map(categories.map((category) => [category.id, category.name]));
     const summary = await Promise.all(items.map(async (item) => ({
         ...item,
+        category: item.categoryId ? categoryMap.get(item.categoryId) ?? '' : '',
+        supplierPrice: Number(item.costPrice ?? 0),
+        stock: await (0, rules_1.getProductStock)(item.id),
         totalStock: await (0, rules_1.getProductStock)(item.id),
     })));
     return (0, http_1.ok)(c, summary);

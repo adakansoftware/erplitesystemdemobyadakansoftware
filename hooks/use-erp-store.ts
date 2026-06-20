@@ -1,25 +1,38 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { api } from '@/lib/api/client'
 import {
   accountStatements,
   currentAccounts as initialCurrentAccounts,
   defaultStatement,
+  type AccountStatementRow,
   type CurrentAccount,
 } from '@/lib/data/accounts'
 import {
-  companies,
-  contacts,
-  deals,
-  leads,
+  companies as initialCompanies,
+  contacts as initialContacts,
+  deals as initialDeals,
+  leads as initialLeads,
   tasks as initialTasks,
+  type Company,
+  type Contact,
+  type Deal,
+  type Lead,
   type Task,
 } from '@/lib/data/crm'
-import { financeAccounts, transactions } from '@/lib/data/finance'
+import {
+  financeAccounts as initialFinanceAccounts,
+  transactions as initialTransactions,
+  type FinanceAccount,
+  type Transaction,
+} from '@/lib/data/finance'
 import {
   stockMovements as initialStockMovements,
+  warehouses as initialWarehouses,
   type MovementType,
   type StockMovement,
+  type Warehouse,
 } from '@/lib/data/inventory'
 import {
   invoices as initialInvoices,
@@ -29,9 +42,9 @@ import {
   type InvoiceLine,
 } from '@/lib/data/invoices'
 import {
+  getStockStatus,
   products as initialProducts,
   productStatusMeta,
-  getStockStatus,
   type Product,
   type ProductStatus,
 } from '@/lib/data/products'
@@ -44,16 +57,23 @@ import {
   type PurchaseOrderStatus,
 } from '@/lib/data/purchases'
 import {
-  quotations as initialQuotations,
   quotationStatusMeta,
   quotationTotals,
+  quotations as initialQuotations,
   type Quotation,
   type QuotationLine,
   type QuotationStatus,
 } from '@/lib/data/quotations'
 import { formatCurrency } from '@/lib/ui-meta'
 
-type StoredCollections = {
+type FinanceTransaction = Transaction & {
+  currentAccountId?: string | null
+  financeAccountId?: string | null
+}
+
+type StoreState = {
+  hydrated: boolean
+  error: string | null
   products: Product[]
   invoices: Invoice[]
   quotations: Quotation[]
@@ -61,6 +81,13 @@ type StoredCollections = {
   currentAccounts: CurrentAccount[]
   tasks: Task[]
   stockMovements: StockMovement[]
+  leads: Lead[]
+  deals: Deal[]
+  companies: Company[]
+  contacts: Contact[]
+  financeAccounts: FinanceAccount[]
+  transactions: FinanceTransaction[]
+  warehouses: Warehouse[]
 }
 
 type SearchModuleKey =
@@ -93,31 +120,46 @@ export type SearchResult = {
   searchableText: string
 }
 
-const STORAGE_KEYS = {
-  products: 'adakan-erp-products',
-  invoices: 'adakan-erp-invoices',
-  quotations: 'adakan-erp-quotations',
-  purchases: 'adakan-erp-purchases',
-  currentAccounts: 'adakan-erp-current-accounts',
-  tasks: 'adakan-erp-tasks',
-  stockMovements: 'adakan-erp-stock-movements',
-} as const
+const initialState: StoreState = {
+  hydrated: false,
+  error: null,
+  products: initialProducts,
+  invoices: initialInvoices,
+  quotations: initialQuotations,
+  purchases: initialPurchases,
+  currentAccounts: initialCurrentAccounts,
+  tasks: initialTasks,
+  stockMovements: initialStockMovements,
+  leads: initialLeads,
+  deals: initialDeals,
+  companies: initialCompanies,
+  contacts: initialContacts,
+  financeAccounts: initialFinanceAccounts,
+  transactions: initialTransactions,
+  warehouses: initialWarehouses,
+}
 
-function loadCollection<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') {
-    return fallback
-  }
+let storeState = initialState
+let pendingRefresh: Promise<void> | null = null
+const listeners = new Set<(state: StoreState) => void>()
 
-  const raw = window.localStorage.getItem(key)
-  if (!raw) {
-    return fallback
-  }
+function emit(nextState: StoreState) {
+  storeState = nextState
+  listeners.forEach((listener) => listener(storeState))
+}
 
-  try {
-    return JSON.parse(raw) as T
-  } catch {
-    return fallback
-  }
+function setStoreState(nextState: StoreState | ((state: StoreState) => StoreState)) {
+  emit(typeof nextState === 'function' ? nextState(storeState) : nextState)
+}
+
+function nextSequenceId(ids: string[], prefix: string) {
+  const nextValue =
+    ids
+      .map((id) => Number(id.replace(`${prefix}-`, '')))
+      .filter((value) => Number.isFinite(value))
+      .reduce((max, value) => Math.max(max, value), 0) + 1
+
+  return `${prefix}-${String(nextValue).padStart(3, '0')}`
 }
 
 function normalize(value: string) {
@@ -155,511 +197,760 @@ function scoreMatch(query: string, searchableText: string) {
   return score
 }
 
-function nextSequenceId(ids: string[], prefix: string) {
-  const nextValue =
-    ids
-      .map((id) => Number(id.replace(`${prefix}-`, '')))
-      .filter((value) => Number.isFinite(value))
-      .reduce((max, value) => Math.max(max, value), 0) + 1
-
-  return `${prefix}-${String(nextValue).padStart(4, '0')}`
-}
-
-function nextDocumentId(ids: string[], prefix: string) {
-  const nextValue =
-    ids
-      .map((id) => {
-        const parts = id.split('-')
-        return Number(parts[parts.length - 1])
-      })
-      .filter((value) => Number.isFinite(value))
-      .reduce((max, value) => Math.max(max, value), 0) + 1
-
-  return `${prefix}-2024-${String(nextValue).padStart(4, '0')}`
-}
-
 function productIdByName(products: Product[], productName: string) {
   return products.find((product) => product.name === productName)?.id ?? ''
 }
 
-function productSkuByName(products: Product[], productName: string) {
-  return products.find((product) => product.name === productName)?.sku ?? ''
+function mapProduct(item: any): Product {
+  return {
+    id: item.id,
+    name: item.name ?? '',
+    sku: item.sku ?? '',
+    barcode: item.barcode ?? '',
+    category: item.category ?? '',
+    brand: item.brand ?? '',
+    unit: item.unit ?? 'Adet',
+    costPrice: Number(item.costPrice ?? 0),
+    supplierPrice: Number(item.supplierPrice ?? item.costPrice ?? 0),
+    salePrice: Number(item.salePrice ?? 0),
+    taxRate: Number(item.taxRate ?? 0),
+    stock: Number(item.stock ?? item.totalStock ?? 0),
+    reorderPoint: Number(item.reorderPoint ?? 0),
+    status: (item.status ?? 'active') as ProductStatus,
+    description: item.description ?? '',
+    createdAt: String(item.createdAt ?? new Date().toISOString()).slice(0, 10),
+  }
 }
 
-function saveCollection<K extends keyof StoredCollections>(
-  key: K,
-  value: StoredCollections[K],
-) {
-  if (typeof window === 'undefined') {
-    return
+function mapInvoiceLine(line: any): InvoiceLine {
+  return {
+    product: line.product ?? '',
+    quantity: Number(line.quantity ?? 0),
+    unitPrice: Number(line.unitPrice ?? 0),
+    taxRate: Number(line.taxRate ?? 0),
+  }
+}
+
+function mapInvoice(item: any): Invoice {
+  return {
+    id: item.id,
+    customer: item.customer ?? '',
+    issueDate: item.issueDate ?? '',
+    dueDate: item.dueDate ?? '',
+    status: item.status ?? 'draft',
+    lines: Array.isArray(item.lines) ? item.lines.map(mapInvoiceLine) : [],
+    note: item.note ?? '',
+    relatedQuotation: item.relatedQuotation ?? item.relatedQuotationId ?? undefined,
+  }
+}
+
+function mapQuotationLine(line: any): QuotationLine {
+  return {
+    product: line.product ?? '',
+    quantity: Number(line.quantity ?? 0),
+    unitPrice: Number(line.unitPrice ?? 0),
+    taxRate: Number(line.taxRate ?? 0),
+  }
+}
+
+function mapQuotation(item: any): Quotation {
+  return {
+    id: item.id,
+    customer: item.customer ?? '',
+    date: item.date ?? '',
+    validUntil: item.validUntil ?? '',
+    status: item.status ?? 'draft',
+    lines: Array.isArray(item.lines) ? item.lines.map(mapQuotationLine) : [],
+    note: item.note ?? '',
+    relatedInvoice: item.relatedInvoice ?? item.convertedToInvoiceId ?? undefined,
+  }
+}
+
+function mapPurchaseLine(line: any): PurchaseOrderLine {
+  return {
+    product: line.product ?? '',
+    qty: Number(line.qty ?? line.quantity ?? 0),
+    unitPrice: Number(line.unitPrice ?? 0),
+    taxRate: Number(line.taxRate ?? 0),
+  }
+}
+
+function mapPurchase(item: any): PurchaseOrder {
+  return {
+    id: item.id,
+    supplier: item.supplier ?? '',
+    orderDate: item.orderDate ?? '',
+    expectedDate: item.expectedDate ?? '',
+    status: item.status ?? 'draft',
+    note: item.note ?? '',
+    lines: Array.isArray(item.lines) ? item.lines.map(mapPurchaseLine) : [],
+  }
+}
+
+function mapCurrentAccount(item: any): CurrentAccount {
+  return {
+    id: item.id,
+    name: item.name ?? '',
+    type: item.type === 'supplier' ? 'supplier' : 'customer',
+    taxNumber: item.taxNumber ?? '',
+    city: item.city ?? '',
+    phone: item.phone ?? '',
+    email: item.email ?? '',
+    balance: Number(item.balance ?? 0),
+    creditLimit: Number(item.creditLimit ?? 0),
+  }
+}
+
+function mapTask(item: any): Task {
+  return {
+    id: item.id,
+    title: item.title ?? '',
+    related: item.related ?? '',
+    due: item.due ?? '',
+    priority: (item.priority ?? 'medium') as Task['priority'],
+    done: Boolean(item.done),
+    owner: item.owner ?? '',
+  }
+}
+
+function mapMovement(item: any): StockMovement {
+  return {
+    id: item.id,
+    productId: item.productId ?? '',
+    warehouseId: item.warehouseId ?? 'WH-01',
+    date:
+      typeof item.date === 'string'
+        ? item.date.slice(0, 10)
+        : String(item.createdAt ?? '').slice(0, 10),
+    qty: Number(item.qty ?? 0),
+    note: item.note ?? '',
+    relatedDoc: item.relatedDoc ?? item.relatedDocId ?? undefined,
+    product: item.product ?? '',
+    sku: item.sku ?? '',
+    type: (item.type ?? 'in') as MovementType,
+    warehouse: item.warehouse ?? 'Merkez Depo',
+    user: item.user ?? 'ERP Lite',
+  }
+}
+
+function mapLead(item: any): Lead {
+  return {
+    id: item.id,
+    name: item.name ?? '',
+    company: item.company ?? '',
+    source: item.source ?? '',
+    status: (item.status ?? 'new') as Lead['status'],
+    value: Number(item.value ?? 0),
+    owner: item.owner ?? '',
+    createdAt: String(item.createdAt ?? '').slice(0, 10),
+  }
+}
+
+function mapFinanceAccount(item: any): FinanceAccount {
+  return {
+    id: item.id,
+    name: item.name ?? '',
+    type: item.type === 'cash' ? 'cash' : 'bank',
+    bankName: item.bankName ?? undefined,
+    iban: item.iban ?? undefined,
+    currency: item.currency ?? 'TRY',
+    balance: Number(item.balance ?? 0),
+  }
+}
+
+function mapTransaction(item: any): FinanceTransaction {
+  return {
+    id: item.id,
+    date: item.date ?? '',
+    description: item.description ?? '',
+    category: item.category ?? '',
+    account: item.account ?? '',
+    type: item.type === 'expense' ? 'expense' : 'income',
+    amount: Number(item.amount ?? 0),
+    currentAccountId: item.currentAccountId ?? undefined,
+    financeAccountId: item.financeAccountId ?? undefined,
+  }
+}
+
+function mapWarehouse(item: any): Warehouse {
+  return {
+    id: item.id,
+    name: item.name ?? '',
+    location: item.location ?? '',
+    manager: item.manager ?? '',
+    capacity: Number(item.capacity ?? 0),
+    used: Number(item.used ?? 0),
+    itemCount: Number(item.itemCount ?? 0),
+    status: item.active === false ? 'passive' : 'active',
+  }
+}
+
+async function requestOrFallback<T>(promise: Promise<T>, fallback: T) {
+  try {
+    return await promise
+  } catch {
+    return fallback
+  }
+}
+
+async function refreshStore() {
+  if (pendingRefresh) {
+    return pendingRefresh
   }
 
-  window.localStorage.setItem(STORAGE_KEYS[key], JSON.stringify(value))
+  pendingRefresh = (async () => {
+    const [
+      rawProducts,
+      rawInvoices,
+      rawQuotations,
+      rawPurchases,
+      rawCurrentAccounts,
+      rawTasks,
+      rawMovements,
+      rawLeads,
+      rawDeals,
+      rawCompanies,
+      rawContacts,
+      rawFinanceAccounts,
+      rawTransactions,
+      rawWarehouses,
+    ] = await Promise.all([
+      requestOrFallback(api.get<any[]>('/products'), []),
+      requestOrFallback(api.get<any[]>('/invoices'), []),
+      requestOrFallback(api.get<any[]>('/quotations'), []),
+      requestOrFallback(api.get<any[]>('/purchase-orders'), []),
+      requestOrFallback(api.get<any[]>('/current-accounts'), []),
+      requestOrFallback(api.get<any[]>('/crm/tasks'), []),
+      requestOrFallback(api.get<any[]>('/stock/movements'), []),
+      requestOrFallback(api.get<any[]>('/crm/leads'), []),
+      requestOrFallback(api.get<any[]>('/crm/deals'), []),
+      requestOrFallback(api.get<any[]>('/crm/companies'), []),
+      requestOrFallback(api.get<any[]>('/crm/contacts'), []),
+      requestOrFallback(api.get<any[]>('/finance/accounts'), []),
+      requestOrFallback(api.get<any[]>('/finance/transactions'), []),
+      requestOrFallback(api.get<any[]>('/stock/warehouses'), []),
+    ])
+
+    const currentAccounts = rawCurrentAccounts.length
+      ? rawCurrentAccounts.map(mapCurrentAccount)
+      : initialCurrentAccounts
+    const currentAccountMap = new Map(currentAccounts.map((account) => [account.id, account.name]))
+
+    const financeAccounts = rawFinanceAccounts.length
+      ? rawFinanceAccounts.map(mapFinanceAccount)
+      : initialFinanceAccounts
+
+    const warehouses = rawWarehouses.length
+      ? rawWarehouses.map(mapWarehouse)
+      : initialWarehouses
+
+    const warehouseMap = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse]))
+    const products = rawProducts.length ? rawProducts.map(mapProduct) : initialProducts
+    const transactions = rawTransactions.length
+      ? rawTransactions.map(mapTransaction)
+      : initialTransactions
+    const productsById = new Map(products.map((product) => [product.id, product]))
+
+    const deals = (rawDeals.length ? rawDeals : initialDeals).map((item: any) => ({
+      id: item.id,
+      title: item.title ?? '',
+      customer:
+        item.customer ??
+        (item.currentAccountId ? currentAccountMap.get(item.currentAccountId) ?? '' : ''),
+      stage: (item.stage ?? 'lead') as Deal['stage'],
+      value: Number(item.value ?? 0),
+      owner: item.owner ?? '',
+      closeDate: item.closeDate ?? '',
+    }))
+
+    const contacts = (rawContacts.length ? rawContacts : initialContacts).map((item: any) => ({
+      id: item.id,
+      name: item.name ?? '',
+      title: item.title ?? '',
+      company:
+        item.company ??
+        (item.companyId
+          ? (rawCompanies.find((company: any) => company.id === item.companyId)?.name ?? '')
+          : ''),
+      email: item.email ?? '',
+      phone: item.phone ?? '',
+    }))
+
+    const companies = (rawCompanies.length ? rawCompanies : initialCompanies).map((item: any) => ({
+      id: item.id,
+      name: item.name ?? '',
+      sector: item.sector ?? '',
+      city: item.city ?? '',
+      contacts: contacts.filter((contact) => contact.company === item.name).length,
+      openDeals: deals.filter(
+        (deal) => deal.customer === item.name && !['won', 'lost'].includes(deal.stage),
+      ).length,
+    }))
+
+    setStoreState({
+      hydrated: true,
+      error: null,
+      products,
+      invoices: rawInvoices.length ? rawInvoices.map(mapInvoice) : initialInvoices,
+      quotations: rawQuotations.length ? rawQuotations.map(mapQuotation) : initialQuotations,
+      purchases: rawPurchases.length ? rawPurchases.map(mapPurchase) : initialPurchases,
+      currentAccounts,
+      tasks: rawTasks.length ? rawTasks.map(mapTask) : initialTasks,
+      stockMovements: (rawMovements.length ? rawMovements : initialStockMovements).map(
+        (item: any) =>
+          rawMovements.length
+            ? mapMovement(item)
+            : {
+                ...item,
+                warehouse:
+                  item.warehouse ??
+                  warehouseMap.get(item.warehouseId)?.name ??
+                  'Merkez Depo',
+              },
+      ),
+      leads: rawLeads.length ? rawLeads.map(mapLead) : initialLeads,
+      deals,
+      companies,
+      contacts,
+      financeAccounts,
+      transactions,
+      warehouses,
+    })
+  })()
+    .catch((error) => {
+      setStoreState((current) => ({
+        ...current,
+        hydrated: true,
+        error: error instanceof Error ? error.message : 'Veri alinamadi',
+      }))
+    })
+    .finally(() => {
+      pendingRefresh = null
+    })
+
+  return pendingRefresh
+}
+
+function subscribe(listener: (state: StoreState) => void) {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+async function createProductAction(payload: {
+  name: string
+  sku: string
+  barcode: string
+  category: string
+  brand: string
+  unit: string
+  costPrice: number
+  supplierPrice: number
+  salePrice: number
+  taxRate: number
+  stock: number
+  reorderPoint: number
+  description: string
+  status?: ProductStatus
+}) {
+  const created = await api.post<any>('/products', {
+    name: payload.name,
+    sku: payload.sku,
+    barcode: payload.barcode,
+    category: payload.category,
+    brand: payload.brand,
+    unit: payload.unit,
+    costPrice: payload.costPrice,
+    salePrice: payload.salePrice,
+    taxRate: payload.taxRate,
+    reorderPoint: payload.reorderPoint,
+    description: payload.description,
+    status: payload.status ?? 'active',
+  })
+
+  if (payload.stock > 0) {
+    await api.post('/stock/movements', {
+      productId: created.id,
+      type: 'in',
+      qty: payload.stock,
+      note: 'Acilis stok bakiyesi',
+      unitCost: payload.costPrice,
+    })
+  }
+
+  await refreshStore()
+  return storeState.products.find((product) => product.id === created.id) ?? mapProduct(created)
+}
+
+async function updateProductAction(
+  id: string,
+  payload: Partial<Omit<Product, 'id' | 'createdAt'> & { status: ProductStatus }>,
+) {
+  const current = storeState.products.find((product) => product.id === id)
+
+  await api.put(`/products/${id}`, {
+    name: payload.name,
+    sku: payload.sku,
+    barcode: payload.barcode,
+    category: payload.category,
+    brand: payload.brand,
+    unit: payload.unit,
+    costPrice: payload.costPrice,
+    salePrice: payload.salePrice,
+    taxRate: payload.taxRate,
+    reorderPoint: payload.reorderPoint,
+    description: payload.description,
+    status: payload.status,
+  })
+
+  if (current && payload.stock != null && payload.stock !== current.stock) {
+    const delta = payload.stock - current.stock
+    await api.post('/stock/movements', {
+      productId: id,
+      type: delta > 0 ? 'in' : 'out',
+      qty: Math.abs(delta),
+      note: 'Urun karti stok duzeltmesi',
+      unitCost: payload.costPrice ?? current.costPrice,
+    })
+  }
+
+  await refreshStore()
+  return storeState.products.find((product) => product.id === id)
+}
+
+async function addStockMovementAction(payload: {
+  productId?: string
+  product?: string
+  warehouseId?: string
+  warehouse?: string
+  type: MovementType
+  qty: number
+  date?: string
+  note: string
+  relatedDoc?: string
+}) {
+  const product =
+    payload.productId
+      ? storeState.products.find((item) => item.id === payload.productId)
+      : storeState.products.find((item) => item.name === payload.product)
+
+  if (!product) {
+    return null
+  }
+
+  const movement = await api.post<any>('/stock/movements', {
+    productId: product.id,
+    warehouseId: payload.warehouseId ?? 'WH-01',
+    type: payload.type,
+    qty: payload.qty,
+    note: payload.note,
+    unitCost: product.costPrice,
+  })
+
+  await refreshStore()
+  return mapMovement({
+    ...movement,
+    product: product.name,
+    sku: product.sku,
+    warehouse: payload.warehouse ?? 'Merkez Depo',
+    relatedDoc: payload.relatedDoc,
+    date: payload.date,
+  })
+}
+
+async function createQuotationAction(payload: {
+  customer: string
+  date: string
+  validUntil: string
+  note: string
+  status?: QuotationStatus
+  lines: QuotationLine[]
+}) {
+  const account = storeState.currentAccounts.find((item) => item.name === payload.customer)
+  const created = await api.post<{ id: string }>('/quotations', {
+    currentAccountId: account?.id,
+    customer: payload.customer,
+    date: payload.date,
+    validUntil: payload.validUntil,
+    note: payload.note,
+    status: payload.status ?? 'draft',
+    lines: payload.lines.map((line) => ({
+      productId: productIdByName(storeState.products, line.product) || undefined,
+      product: line.product,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      taxRate: line.taxRate,
+    })),
+  })
+
+  await refreshStore()
+  return storeState.quotations.find((quotation) => quotation.id === created.id)
+}
+
+async function convertQuotationToInvoiceAction(quotationId: string) {
+  const result = await api.post<{ invoiceId: string }>(`/quotations/${quotationId}/convert-to-invoice`, {})
+  await refreshStore()
+  return storeState.invoices.find((invoice) => invoice.id === result.invoiceId) ?? null
+}
+
+async function createInvoiceAction(payload: {
+  customer: string
+  issueDate: string
+  dueDate: string
+  note: string
+  status?: Invoice['status']
+  lines: InvoiceLine[]
+  relatedQuotation?: string
+}) {
+  const account = storeState.currentAccounts.find((item) => item.name === payload.customer)
+  const created = await api.post<{ id: string }>('/invoices', {
+    currentAccountId: account?.id,
+    customer: payload.customer,
+    issueDate: payload.issueDate,
+    dueDate: payload.dueDate,
+    note: payload.note,
+    status: payload.status ?? 'draft',
+    relatedQuotationId: payload.relatedQuotation,
+    lines: payload.lines.map((line) => ({
+      productId: productIdByName(storeState.products, line.product) || undefined,
+      product: line.product,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      taxRate: line.taxRate,
+    })),
+  })
+
+  await refreshStore()
+  return storeState.invoices.find((invoice) => invoice.id === created.id)
+}
+
+async function createPurchaseOrderAction(payload: {
+  supplier: string
+  orderDate: string
+  expectedDate: string
+  note: string
+  status?: PurchaseOrderStatus
+  lines: PurchaseOrderLine[]
+}) {
+  const account = storeState.currentAccounts.find((item) => item.name === payload.supplier)
+  const created = await api.post<{ id: string }>('/purchase-orders', {
+    currentAccountId: account?.id,
+    supplier: payload.supplier,
+    orderDate: payload.orderDate,
+    expectedDate: payload.expectedDate,
+    note: payload.note,
+    status: payload.status ?? 'draft',
+    lines: payload.lines.map((line) => ({
+      productId: productIdByName(storeState.products, line.product) || undefined,
+      product: line.product,
+      quantity: line.qty,
+      unitPrice: line.unitPrice,
+      taxRate: line.taxRate,
+      receivedQty: payload.status === 'received' ? line.qty : 0,
+    })),
+  })
+
+  await refreshStore()
+  return storeState.purchases.find((purchase) => purchase.id === created.id)
+}
+
+async function updatePurchaseOrderAction(
+  id: string,
+  payload: Partial<Omit<PurchaseOrder, 'id'> & { status: PurchaseOrderStatus }>,
+) {
+  if (payload.status) {
+    await api.put(`/purchase-orders/${id}/status`, { status: payload.status })
+  }
+
+  await refreshStore()
+  return storeState.purchases.find((purchase) => purchase.id === id)
+}
+
+async function createCurrentAccountAction(payload: Omit<CurrentAccount, 'id'>) {
+  const id = `CARI-${Date.now()}`
+  await api.post('/current-accounts', {
+    id,
+    name: payload.name,
+    type: payload.type,
+    taxNumber: payload.taxNumber,
+    city: payload.city,
+    phone: payload.phone,
+    email: payload.email,
+    creditLimit: payload.creditLimit,
+  })
+
+  if (payload.balance !== 0) {
+    const defaultAccount = storeState.financeAccounts.find((account) => account.type === 'bank')
+    if (defaultAccount) {
+      await api.post('/finance/transactions', {
+        date: new Date().toISOString().slice(0, 10),
+        description: `${payload.name} - Acilis bakiyesi`,
+        category: 'Acilis',
+        financeAccountId: defaultAccount.id,
+        type: payload.balance > 0 ? 'income' : 'expense',
+        amount: Math.abs(payload.balance),
+        currentAccountId: id,
+      })
+    }
+  }
+
+  await refreshStore()
+  return storeState.currentAccounts.find((account) => account.id === id)!
+}
+
+async function updateCurrentAccountAction(
+  id: string,
+  payload: Partial<Omit<CurrentAccount, 'id'>>,
+) {
+  const current = storeState.currentAccounts.find((account) => account.id === id)
+
+  await api.put(`/current-accounts/${id}`, {
+    name: payload.name,
+    type: payload.type,
+    taxNumber: payload.taxNumber,
+    city: payload.city,
+    phone: payload.phone,
+    email: payload.email,
+    creditLimit: payload.creditLimit,
+  })
+
+  if (current && payload.balance != null && payload.balance !== current.balance) {
+    const delta = payload.balance - current.balance
+    const defaultAccount = storeState.financeAccounts.find((account) => account.type === 'bank')
+    if (defaultAccount) {
+      await api.post('/finance/transactions', {
+        date: new Date().toISOString().slice(0, 10),
+        description: `${payload.name ?? current.name} - Bakiye duzeltmesi`,
+        category: 'Duzeltme',
+        financeAccountId: defaultAccount.id,
+        type: delta > 0 ? 'income' : 'expense',
+        amount: Math.abs(delta),
+        currentAccountId: id,
+      })
+    }
+  }
+
+  await refreshStore()
+  return storeState.currentAccounts.find((account) => account.id === id)
+}
+
+async function deleteCurrentAccountAction(id: string) {
+  await api.delete(`/current-accounts/${id}`)
+  await refreshStore()
+}
+
+async function createTaskAction(payload: Omit<Task, 'id' | 'done'> & { done?: boolean }) {
+  const id = nextSequenceId(storeState.tasks.map((task) => task.id), 'TK')
+  await api.post('/crm/tasks', {
+    id,
+    title: payload.title,
+    related: payload.related,
+    due: payload.due,
+    priority: payload.priority,
+    owner: payload.owner,
+    done: payload.done ?? false,
+  })
+  await refreshStore()
+  return storeState.tasks.find((task) => task.id === id)!
+}
+
+async function toggleTaskAction(id: string) {
+  await api.patch(`/crm/tasks/${id}/toggle`, {})
+  await refreshStore()
+  return storeState.tasks.find((task) => task.id === id)
+}
+
+async function deleteTaskAction(id: string) {
+  await api.delete(`/crm/tasks/${id}`)
+  await refreshStore()
+}
+
+function getStatementByAccountId(accountId: string) {
+  const accountTransactions = storeState.transactions
+    .filter((transaction) => transaction.currentAccountId === accountId)
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  if (!accountTransactions.length) {
+    return accountStatements[accountId] ?? defaultStatement
+  }
+
+  let balance = 0
+  return accountTransactions.map<AccountStatementRow>((transaction) => {
+    const debit = transaction.type === 'income' ? transaction.amount : 0
+    const credit = transaction.type === 'expense' ? transaction.amount : 0
+    balance += debit - credit
+    return {
+      id: transaction.id,
+      date: transaction.date,
+      description: transaction.description,
+      debit,
+      credit,
+      balance,
+    }
+  })
 }
 
 export function useErpCollections() {
-  const [collections, setCollections] = useState<StoredCollections>({
-    products: initialProducts,
-    invoices: initialInvoices,
-    quotations: initialQuotations,
-    purchases: initialPurchases,
-    currentAccounts: initialCurrentAccounts,
-    tasks: initialTasks,
-    stockMovements: initialStockMovements,
-  })
-  const [hydrated, setHydrated] = useState(false)
+  const [state, setState] = useState(storeState)
+
+  useEffect(() => subscribe(setState), [])
 
   useEffect(() => {
-    const nextCollections = {
-      products: loadCollection(STORAGE_KEYS.products, initialProducts),
-      invoices: loadCollection(STORAGE_KEYS.invoices, initialInvoices),
-      quotations: loadCollection(STORAGE_KEYS.quotations, initialQuotations),
-      purchases: loadCollection(STORAGE_KEYS.purchases, initialPurchases),
-      currentAccounts: loadCollection(
-        STORAGE_KEYS.currentAccounts,
-        initialCurrentAccounts,
-      ),
-      tasks: loadCollection(STORAGE_KEYS.tasks, initialTasks),
-      stockMovements: loadCollection(
-        STORAGE_KEYS.stockMovements,
-        initialStockMovements,
-      ),
+    if (!storeState.hydrated && !pendingRefresh) {
+      void refreshStore()
     }
-
-    setCollections(nextCollections)
-    setHydrated(true)
   }, [])
 
-  const api = useMemo(() => {
-    const persist = <K extends keyof StoredCollections>(
-      key: K,
-      value: StoredCollections[K],
-    ) => {
-      saveCollection(key, value)
-      setCollections((current) => ({ ...current, [key]: value }))
-      return value
-    }
-
-    const updateProductStock = (
-      currentProducts: Product[],
-      productName: string,
-      delta: number,
-    ) => {
-      return currentProducts.map((product) =>
-        product.name === productName
-          ? { ...product, stock: Math.max(product.stock + delta, 0) }
-          : product,
-      )
-    }
-
-    const buildStockMovement = (payload: {
-      type: MovementType
-      product: string
-      qty: number
-      warehouse?: string
-      warehouseId?: string
-      note: string
-      relatedDoc?: string
-      user?: string
-      date?: string
-    }): StockMovement => ({
-      id: nextSequenceId(
-        collections.stockMovements.map((movement) => movement.id),
-        'MOV',
-      ),
-      productId: productIdByName(collections.products, payload.product),
-      warehouseId: payload.warehouseId ?? 'WH-01',
-      date: payload.date ?? new Date().toISOString().slice(0, 10),
-      qty: payload.qty,
-      note: payload.note,
-      relatedDoc: payload.relatedDoc,
-      product: payload.product,
-      sku: productSkuByName(collections.products, payload.product),
-      type: payload.type,
-      warehouse: payload.warehouse ?? 'Merkez Depo',
-      user: payload.user ?? 'ERP Lite',
-    })
-
-    return {
-      hydrated,
-      products: collections.products,
-      invoices: collections.invoices,
-      quotations: collections.quotations,
-      purchases: collections.purchases,
-      currentAccounts: collections.currentAccounts,
-      tasks: collections.tasks,
-      stockMovements: collections.stockMovements,
+  return useMemo(
+    () => ({
+      ...state,
+      refresh: refreshStore,
       getProductById: (id: string) =>
-        collections.products.find((product) => product.id === id),
+        state.products.find((product) => product.id === id),
       getInvoiceById: (id: string) =>
-        collections.invoices.find((invoice) => invoice.id === id),
+        state.invoices.find((invoice) => invoice.id === id),
       getQuotationById: (id: string) =>
-        collections.quotations.find((quotation) => quotation.id === id),
+        state.quotations.find((quotation) => quotation.id === id),
       getPurchaseById: (id: string) =>
-        collections.purchases.find((purchase) => purchase.id === id),
+        state.purchases.find((purchase) => purchase.id === id),
       getCurrentAccountById: (id: string) =>
-        collections.currentAccounts.find((account) => account.id === id),
-      getStatementByAccountId: (id: string) =>
-        accountStatements[id] ?? defaultStatement,
-      createProduct: (payload: {
-        name: string
-        sku: string
-        barcode: string
-        category: string
-        brand: string
-        unit: string
-        costPrice: number
-        supplierPrice: number
-        salePrice: number
-        taxRate: number
-        stock: number
-        reorderPoint: number
-        description: string
-        status?: ProductStatus
-      }) => {
-        const nextProduct: Product = {
-          id: nextSequenceId(
-            collections.products.map((product) => product.id),
-            'PRD',
-          ),
-          createdAt: new Date().toISOString().slice(0, 10),
-          status: payload.status ?? 'active',
-          ...payload,
-        }
-
-        persist('products', [nextProduct, ...collections.products])
-        return nextProduct
-      },
-      updateProduct: (
-        id: string,
-        payload: Partial<
-          Omit<Product, 'id' | 'createdAt'> & { status: ProductStatus }
-        >,
-      ) => {
-        const nextProducts = collections.products.map((product) =>
-          product.id === id ? { ...product, ...payload } : product,
-        )
-        persist('products', nextProducts)
-        return nextProducts.find((product) => product.id === id)
-      },
-      addStockMovement: (payload: {
-        productId?: string
-        product?: string
-        warehouseId?: string
-        warehouse?: string
-        type: MovementType
-        qty: number
-        date?: string
-        note: string
-        relatedDoc?: string
-      }) => {
-        const targetProduct =
-          payload.productId
-            ? collections.products.find((item) => item.id === payload.productId)
-            : collections.products.find((item) => item.name === payload.product)
-
-        if (!targetProduct) {
-          return null
-        }
-
-        const nextMovement = buildStockMovement({
-          type: payload.type,
-          product: targetProduct.name,
-          qty: payload.qty,
-          warehouse: payload.warehouse,
-          warehouseId: payload.warehouseId,
-          note: payload.note,
-          relatedDoc: payload.relatedDoc,
-          date: payload.date,
-        })
-
-        const stockDelta =
-          payload.type === 'in'
-            ? payload.qty
-            : payload.type === 'out'
-              ? -payload.qty
-              : payload.type === 'adjustment'
-                ? payload.qty
-                : 0
-
-        const nextProducts = updateProductStock(
-          collections.products,
-          targetProduct.name,
-          stockDelta,
-        )
-        const nextMovements = [nextMovement, ...collections.stockMovements]
-
-        persist('products', nextProducts)
-        persist('stockMovements', nextMovements)
-        return nextMovement
-      },
-      createInvoice: (payload: {
-        customer: string
-        issueDate: string
-        dueDate: string
-        note: string
-        status?: Invoice['status']
-        lines: InvoiceLine[]
-        relatedQuotation?: string
-      }) => {
-        const nextInvoice: Invoice = {
-          id: nextDocumentId(
-            collections.invoices.map((invoice) => invoice.id),
-            'FT',
-          ),
-          status: payload.status ?? 'draft',
-          ...payload,
-        }
-
-        const nextInvoices = [nextInvoice, ...collections.invoices]
-        let nextProducts = collections.products
-        let nextMovements = collections.stockMovements
-
-        if (nextInvoice.status !== 'cancelled') {
-          payload.lines.forEach((line) => {
-            nextProducts = updateProductStock(nextProducts, line.product, -line.quantity)
-
-            nextMovements = [
-              {
-                id: nextSequenceId(
-                  nextMovements.map((movement) => movement.id),
-                  'MOV',
-                ),
-                productId: productIdByName(nextProducts, line.product),
-                warehouseId: 'WH-01',
-                date: nextInvoice.issueDate,
-                qty: line.quantity,
-                note: 'Fatura kaynakli stok cikisi',
-                relatedDoc: nextInvoice.id,
-                product: line.product,
-                sku: productSkuByName(nextProducts, line.product),
-                type: 'out',
-                warehouse: 'Merkez Depo',
-                user: 'ERP Lite',
-              },
-              ...nextMovements,
-            ]
-          })
-        }
-
-        persist('invoices', nextInvoices)
-        persist('products', nextProducts)
-        persist('stockMovements', nextMovements)
-        return nextInvoice
-      },
-      createQuotation: (payload: {
-        customer: string
-        date: string
-        validUntil: string
-        note: string
-        status?: QuotationStatus
-        lines: QuotationLine[]
-      }) => {
-        const nextQuotation: Quotation = {
-          id: nextDocumentId(
-            collections.quotations.map((quotation) => quotation.id),
-            'TKL',
-          ),
-          status: payload.status ?? 'draft',
-          ...payload,
-        }
-
-        persist('quotations', [nextQuotation, ...collections.quotations])
-        return nextQuotation
-      },
-      convertQuotationToInvoice: (quotationId: string) => {
-        const quotation = collections.quotations.find((item) => item.id === quotationId)
-        if (!quotation) {
-          return null
-        }
-
-        const nextInvoice: Invoice = {
-          id: nextDocumentId(
-            collections.invoices.map((invoice) => invoice.id),
-            'FT',
-          ),
-          customer: quotation.customer,
-          issueDate: new Date().toISOString().slice(0, 10),
-          dueDate: quotation.validUntil,
-          status: 'draft',
-          note: quotation.note,
-          relatedQuotation: quotation.id,
-          lines: quotation.lines.map((line) => ({
-            product: line.product,
-            quantity: line.quantity,
-            unitPrice: line.unitPrice,
-            taxRate: line.taxRate,
-          })),
-        }
-
-        const nextQuotations = collections.quotations.map((item) =>
-          item.id === quotationId
-            ? ({ ...item, status: 'accepted', relatedInvoice: nextInvoice.id } as Quotation)
-            : item,
-        )
-
-        let nextProducts = collections.products
-        let nextMovements = collections.stockMovements
-
-        nextInvoice.lines.forEach((line) => {
-          nextProducts = updateProductStock(nextProducts, line.product, -line.quantity)
-          nextMovements = [
-            {
-              id: nextSequenceId(
-                nextMovements.map((movement) => movement.id),
-                'MOV',
-              ),
-              productId: productIdByName(nextProducts, line.product),
-              warehouseId: 'WH-01',
-              date: nextInvoice.issueDate,
-              qty: line.quantity,
-              note: 'Tekliften faturaya donusum stok cikisi',
-              relatedDoc: nextInvoice.id,
-              product: line.product,
-              sku: productSkuByName(nextProducts, line.product),
-              type: 'out',
-              warehouse: 'Merkez Depo',
-              user: 'ERP Lite',
-            },
-            ...nextMovements,
-          ]
-        })
-
-        persist('quotations', nextQuotations)
-        persist('invoices', [nextInvoice, ...collections.invoices])
-        persist('products', nextProducts)
-        persist('stockMovements', nextMovements)
-        return nextInvoice
-      },
-      createPurchaseOrder: (payload: {
-        supplier: string
-        orderDate: string
-        expectedDate: string
-        note: string
-        status?: PurchaseOrderStatus
-        lines: PurchaseOrderLine[]
-      }) => {
-        const nextPurchase: PurchaseOrder = {
-          id: nextDocumentId(
-            collections.purchases.map((purchase) => purchase.id),
-            'SPA',
-          ),
-          status: payload.status ?? 'draft',
-          ...payload,
-        }
-
-        let nextProducts = collections.products
-        let nextMovements = collections.stockMovements
-
-        if (nextPurchase.status === 'received' || nextPurchase.status === 'partial') {
-          nextPurchase.lines.forEach((line) => {
-            nextProducts = updateProductStock(nextProducts, line.product, line.qty)
-            nextMovements = [
-              {
-                id: nextSequenceId(
-                  nextMovements.map((movement) => movement.id),
-                  'MOV',
-                ),
-                productId: productIdByName(nextProducts, line.product),
-                warehouseId: 'WH-01',
-                date: nextPurchase.orderDate,
-                qty: line.qty,
-                note: 'Satin alma kaynakli stok girisi',
-                relatedDoc: nextPurchase.id,
-                product: line.product,
-                sku: productSkuByName(nextProducts, line.product),
-                type: 'in',
-                warehouse: 'Merkez Depo',
-                user: 'ERP Lite',
-              },
-              ...nextMovements,
-            ]
-          })
-        }
-
-        persist('purchases', [nextPurchase, ...collections.purchases])
-        persist('products', nextProducts)
-        persist('stockMovements', nextMovements)
-        return nextPurchase
-      },
-      updatePurchaseOrder: (
-        id: string,
-        payload: Partial<
-          Omit<PurchaseOrder, 'id'> & { status: PurchaseOrderStatus }
-        >,
-      ) => {
-        const nextPurchases = collections.purchases.map((purchase) =>
-          purchase.id === id ? { ...purchase, ...payload } : purchase,
-        )
-        persist('purchases', nextPurchases)
-        return nextPurchases.find((purchase) => purchase.id === id)
-      },
-      createCurrentAccount: (payload: Omit<CurrentAccount, 'id'>) => {
-        const nextAccount: CurrentAccount = {
-          id: nextSequenceId(
-            collections.currentAccounts.map((account) => account.id),
-            'CARI',
-          ),
-          ...payload,
-        }
-
-        persist('currentAccounts', [nextAccount, ...collections.currentAccounts])
-        return nextAccount
-      },
-      updateCurrentAccount: (
-        id: string,
-        payload: Partial<Omit<CurrentAccount, 'id'>>,
-      ) => {
-        const nextAccounts = collections.currentAccounts.map((account) =>
-          account.id === id ? { ...account, ...payload } : account,
-        )
-        persist('currentAccounts', nextAccounts)
-        return nextAccounts.find((account) => account.id === id)
-      },
-      deleteCurrentAccount: (id: string) => {
-        const nextAccounts = collections.currentAccounts.filter(
-          (account) => account.id !== id,
-        )
-        persist('currentAccounts', nextAccounts)
-      },
-      createTask: (payload: Omit<Task, 'id' | 'done'> & { done?: boolean }) => {
-        const nextTask: Task = {
-          id: nextSequenceId(collections.tasks.map((task) => task.id), 'TK'),
-          done: payload.done ?? false,
-          ...payload,
-        }
-
-        persist('tasks', [nextTask, ...collections.tasks])
-        return nextTask
-      },
-      toggleTask: (id: string) => {
-        const nextTasks = collections.tasks.map((task) =>
-          task.id === id ? { ...task, done: !task.done } : task,
-        )
-        persist('tasks', nextTasks)
-        return nextTasks.find((task) => task.id === id)
-      },
-      deleteTask: (id: string) => {
-        persist(
-          'tasks',
-          collections.tasks.filter((task) => task.id !== id),
-        )
-      },
-    }
-  }, [collections, hydrated])
-
-  return api
+        state.currentAccounts.find((account) => account.id === id),
+      getStatementByAccountId,
+      createProduct: createProductAction,
+      updateProduct: updateProductAction,
+      addStockMovement: addStockMovementAction,
+      createInvoice: createInvoiceAction,
+      createQuotation: createQuotationAction,
+      convertQuotationToInvoice: convertQuotationToInvoiceAction,
+      createPurchaseOrder: createPurchaseOrderAction,
+      updatePurchaseOrder: updatePurchaseOrderAction,
+      createCurrentAccount: createCurrentAccountAction,
+      updateCurrentAccount: updateCurrentAccountAction,
+      deleteCurrentAccount: deleteCurrentAccountAction,
+      createTask: createTaskAction,
+      toggleTask: toggleTaskAction,
+      deleteTask: deleteTaskAction,
+    }),
+    [state],
+  )
 }
 
 export function useErpSearchResults(query: string) {
   const {
-    products,
-    invoices,
-    quotations,
-    purchases,
+    companies,
+    contacts,
     currentAccounts,
-    tasks,
+    deals,
+    financeAccounts,
+    invoices,
+    leads,
+    products,
+    purchases,
+    quotations,
     stockMovements,
+    tasks,
+    transactions,
   } = useErpCollections()
 
   return useMemo(() => {
@@ -936,13 +1227,19 @@ export function useErpSearchResults(query: string) {
       .filter((item) => item.score > 0)
       .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title, 'tr'))
   }, [
+    companies,
+    contacts,
     currentAccounts,
+    deals,
+    financeAccounts,
     invoices,
+    leads,
     products,
     purchases,
     query,
     quotations,
     stockMovements,
     tasks,
+    transactions,
   ])
 }

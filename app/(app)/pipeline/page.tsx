@@ -1,7 +1,10 @@
+'use client'
+
 import { PageHeader } from '@/components/shared/page-header'
 import { SectionCard } from '@/components/shared/module-primitives'
 import { Badge } from '@/components/ui/badge'
-import { deals, dealStageMeta } from '@/lib/data/crm'
+import { dealStageMeta } from '@/lib/data/crm'
+import { useErpCollections } from '@/hooks/use-erp-store'
 import { formatCurrency } from '@/lib/ui-meta'
 
 const stages: Array<keyof typeof dealStageMeta> = [
@@ -13,6 +16,8 @@ const stages: Array<keyof typeof dealStageMeta> = [
 ]
 
 export default function PipelinePage() {
+  const { deals } = useErpCollections()
+
   return (
     <>
       <PageHeader

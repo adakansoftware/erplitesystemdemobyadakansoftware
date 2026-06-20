@@ -181,8 +181,8 @@ export function NewInvoicePageClient() {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
-  function handleSave() {
-    const nextInvoice = createInvoice({
+  async function handleSave() {
+    const nextInvoice = await createInvoice({
       customer: form.customer,
       issueDate: form.issueDate,
       dueDate: form.dueDate,
@@ -204,6 +204,11 @@ export function NewInvoicePageClient() {
       ],
     })
 
+    if (!nextInvoice) {
+      toast.error('Fatura olusturulamadi')
+      return
+    }
+
     toast.success('Fatura olusturuldu')
     router.push(`/faturalar/${nextInvoice.id}`)
   }
@@ -215,7 +220,7 @@ export function NewInvoicePageClient() {
         description="Musteri faturalari icin belge olusturma arayuzu."
       >
         <Button variant="outline" render={<Link href="/faturalar">Vazgec</Link>} />
-        <Button onClick={handleSave}>Faturayi Kaydet</Button>
+        <Button onClick={() => void handleSave()}>Faturayi Kaydet</Button>
       </PageHeader>
 
       <div className="grid gap-4 xl:grid-cols-3">

@@ -22,8 +22,8 @@ export default function LoginPage() {
     }
   }, [currentUser, isReady, router])
 
-  function handleLogin() {
-    const result = login(email, password)
+  async function handleLogin() {
+    const result = await login(email, password)
 
     if (!result.ok) {
       toast.error(result.message)
@@ -45,7 +45,7 @@ export default function LoginPage() {
           >
             <PageHeader
               title="Demo Girisi"
-              description="Bu surum front-end ve localStorage tabanli urun demosu olarak calisir."
+              description="CRM, ERP ve finans modullerine API destekli demo oturumuyla giris yapin."
             />
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-lg border p-4">
@@ -63,7 +63,7 @@ export default function LoginPage() {
               <div className="rounded-lg border p-4">
                 <p className="text-sm font-medium">Demo Session</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Giris ve tum CRUD akislari tarayici icinde saklanir.
+                  Giris, veriler ve belge akislarinin tamami canli API uzerinden calisir.
                 </p>
               </div>
             </div>
@@ -93,7 +93,7 @@ export default function LoginPage() {
                 />
               </Field>
             </FieldGroup>
-            <Button onClick={handleLogin}>Oturum Ac</Button>
+            <Button onClick={() => void handleLogin()}>Oturum Ac</Button>
             <Field>
               <FieldLabel>Demo Hesaplar</FieldLabel>
               <FieldContent>

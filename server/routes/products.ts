@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { and, eq, ilike, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
-import { productCategories, products, stockMovements } from '../db/schema'
+import { productCategories, products, stockMovements, warehouses } from '../db/schema'
 import { attachProductStocks, getProductStock } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
 import { validate } from '../middleware/validate'
@@ -12,6 +12,7 @@ const createSchema = z.object({
   name: z.string().min(2),
   sku: z.string().min(2),
   barcode: z.string().optional().nullable(),
+  category: z.string().optional().nullable(),
   categoryId: z.string().uuid().optional().nullable(),
   brand: z.string().optional().nullable(),
   unit: z.string().default('Adet'),
@@ -26,6 +27,24 @@ const createSchema = z.object({
 const updateSchema = createSchema.partial()
 
 export const productsRoutes = new Hono()
+
+async function resolveCategoryId(input?: string | null, existingId?: string | null) {
+  if (existingId) {
+    return existingId
+  }
+
+  if (!input) {
+    return undefined
+  }
+
+  const [existing] = await db.select().from(productCategories).where(eq(productCategories.name, input))
+  if (existing) {
+    return existing.id
+  }
+
+  const [createdCategory] = await db.insert(productCategories).values({ name: input }).returning()
+  return createdCategory.id
+}
 
 productsRoutes.get('/', async (c) => {
   const search = c.req.query('search')
@@ -45,7 +64,19 @@ productsRoutes.get('/', async (c) => {
     .from(products)
     .where(filters.length ? and(...filters) : undefined)
 
-  return ok(c, await attachProductStocks(result))
+  const categories = await db.select().from(productCategories)
+  const categoryMap = new Map(categories.map((category) => [category.id, category.name]))
+  const withStocks = await attachProductStocks(result)
+
+  return ok(
+    c,
+    withStocks.map((item) => ({
+      ...item,
+      category: item.categoryId ? categoryMap.get(item.categoryId) ?? '' : '',
+      stock: item.totalStock,
+      supplierPrice: Number(item.costPrice ?? 0),
+    })),
+  )
 })
 
 productsRoutes.get('/low-stock', async (c) => {
@@ -62,12 +93,33 @@ productsRoutes.get('/:id', async (c) => {
   }
 
   const totalStock = await getProductStock(product.id)
+  const [category] = product.categoryId
+    ? await db.select().from(productCategories).where(eq(productCategories.id, product.categoryId))
+    : [null]
+  const warehouseItems = await db.select().from(warehouses)
+  const warehouseMap = new Map(warehouseItems.map((warehouse) => [warehouse.id, warehouse.name]))
   const movements = await db
     .select()
     .from(stockMovements)
     .where(eq(stockMovements.productId, product.id))
 
-  return ok(c, { ...product, totalStock, stockMovements: movements })
+  return ok(c, {
+    ...product,
+    category: category?.name ?? '',
+    stock: totalStock,
+    totalStock,
+    supplierPrice: Number(product.costPrice ?? 0),
+    stockMovements: movements.map((movement) => ({
+      ...movement,
+      qty: Number(movement.qty),
+      product: product.name,
+      sku: product.sku,
+      warehouse: movement.warehouseId ? warehouseMap.get(movement.warehouseId) ?? movement.warehouseId : 'Merkez Depo',
+      relatedDoc: movement.relatedDocId,
+      user: 'ERP Lite',
+      date: movement.createdAt.toISOString().slice(0, 10),
+    })),
+  })
 })
 
 productsRoutes.get('/:id/stock', async (c) => {
@@ -86,12 +138,21 @@ productsRoutes.get('/:id/stock', async (c) => {
 
 productsRoutes.post('/', validate(createSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof createSchema>
+  const categoryId = await resolveCategoryId(body.category, body.categoryId)
   await db.insert(products).values({
     id: body.id ?? `PRD-${Date.now()}`,
-    ...body,
+    name: body.name,
+    sku: body.sku,
+    barcode: body.barcode,
+    categoryId,
+    brand: body.brand,
+    unit: body.unit,
     costPrice: String(body.costPrice),
     salePrice: String(body.salePrice),
     taxRate: String(body.taxRate),
+    reorderPoint: body.reorderPoint,
+    status: body.status,
+    description: body.description,
   })
 
   const [product] = await db.select().from(products).where(eq(products.sku, body.sku))
@@ -101,13 +162,22 @@ productsRoutes.post('/', validate(createSchema), async (c) => {
 productsRoutes.put('/:id', validate(updateSchema), async (c) => {
   const id = c.req.param('id')
   const body = c.get('validatedBody') as z.infer<typeof updateSchema>
+  const categoryId = await resolveCategoryId(body.category, body.categoryId)
   await db
     .update(products)
     .set({
-      ...body,
+      name: body.name,
+      sku: body.sku,
+      barcode: body.barcode,
+      categoryId,
+      brand: body.brand,
+      unit: body.unit,
       costPrice: body.costPrice != null ? String(body.costPrice) : undefined,
       salePrice: body.salePrice != null ? String(body.salePrice) : undefined,
       taxRate: body.taxRate != null ? String(body.taxRate) : undefined,
+      reorderPoint: body.reorderPoint,
+      status: body.status,
+      description: body.description,
       updatedAt: new Date(),
     })
     .where(eq(products.id, id))

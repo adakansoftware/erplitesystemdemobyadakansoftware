@@ -37,7 +37,21 @@ exports.quotationsRoutes.get('/', async (c) => {
         .select()
         .from(schema_1.quotations)
         .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined);
-    return (0, http_1.ok)(c, items);
+    const lines = await client_1.db.select().from(schema_1.quotationLines);
+    return (0, http_1.ok)(c, items.map((item) => ({
+        ...item,
+        relatedInvoice: item.convertedToInvoiceId,
+        lines: lines
+            .filter((line) => line.quotationId === item.id)
+            .sort((a, b) => a.lineOrder - b.lineOrder)
+            .map((line) => ({
+            productId: line.productId,
+            product: line.product,
+            quantity: Number(line.quantity),
+            unitPrice: Number(line.unitPrice),
+            taxRate: Number(line.taxRate),
+        })),
+    })));
 });
 exports.quotationsRoutes.get('/:id', async (c) => {
     const id = c.req.param('id');
@@ -45,7 +59,19 @@ exports.quotationsRoutes.get('/:id', async (c) => {
     if (!quotation)
         return (0, http_1.fail)(c, 404, 'Quotation not found');
     const lines = await client_1.db.select().from(schema_1.quotationLines).where((0, drizzle_orm_1.eq)(schema_1.quotationLines.quotationId, id));
-    return (0, http_1.ok)(c, { ...quotation, lines });
+    return (0, http_1.ok)(c, {
+        ...quotation,
+        relatedInvoice: quotation.convertedToInvoiceId,
+        lines: lines
+            .sort((a, b) => a.lineOrder - b.lineOrder)
+            .map((line) => ({
+            productId: line.productId,
+            product: line.product,
+            quantity: Number(line.quantity),
+            unitPrice: Number(line.unitPrice),
+            taxRate: Number(line.taxRate),
+        })),
+    });
 });
 exports.quotationsRoutes.post('/', (0, validate_1.validate)(quotationSchema), async (c) => {
     const body = c.get('validatedBody');

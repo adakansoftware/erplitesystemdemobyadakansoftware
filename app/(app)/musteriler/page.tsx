@@ -1,13 +1,18 @@
+'use client'
+
 import { PageHeader } from '@/components/shared/page-header'
 import { MetricGrid, SectionCard } from '@/components/shared/module-primitives'
-import {
-  customers,
-  balanceMeta,
-} from '@/lib/data/accounts'
-import { contacts } from '@/lib/data/crm'
+import { balanceMeta } from '@/lib/data/accounts'
 import { Badge } from '@/components/ui/badge'
+import { useErpCollections } from '@/hooks/use-erp-store'
 
 export default function CustomersPage() {
+  const { contacts, currentAccounts } = useErpCollections()
+  const customers = currentAccounts.filter((account) => account.type === 'customer')
+  const negativeBalance = customers
+    .filter((item) => item.balance < 0)
+    .reduce((sum, item) => sum + Math.abs(item.balance), 0)
+
   return (
     <>
       <PageHeader
@@ -20,7 +25,7 @@ export default function CustomersPage() {
           { label: 'Musteri Sayisi', value: customers.length },
           { label: 'Aktif Iletisim', value: contacts.length, badge: 'Rehber', badgeVariant: 'info' },
           { label: 'Alacakli Hesap', value: customers.filter((item) => item.balance > 0).length, badge: 'Finans', badgeVariant: 'success' },
-          { label: 'Borc Bakiyesi', value: '5.900 TRY', badge: 'Istisna', badgeVariant: 'warning' },
+          { label: 'Borc Bakiyesi', value: `${negativeBalance.toLocaleString('tr-TR')} TRY`, badge: 'Istisna', badgeVariant: 'warning' },
         ]}
       />
 

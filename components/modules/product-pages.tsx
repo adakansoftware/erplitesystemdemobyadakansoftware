@@ -184,8 +184,8 @@ export function NewProductPageClient() {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
-  function handleSave() {
-    const nextProduct = createProduct({
+  async function handleSave() {
+    const nextProduct = await createProduct({
       name: form.name,
       sku: form.sku,
       barcode: form.barcode,
@@ -212,7 +212,7 @@ export function NewProductPageClient() {
         description="Sisteme yeni urun karti eklemek icin urun tanim formu."
       >
         <Button variant="outline" render={<Link href="/urunler">Vazgec</Link>} />
-        <Button onClick={handleSave}>Urunu Kaydet</Button>
+        <Button onClick={() => void handleSave()}>Urunu Kaydet</Button>
       </PageHeader>
 
       <div className="grid gap-4 xl:grid-cols-3">
@@ -476,8 +476,8 @@ export function ProductDetailPageClient() {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
-  function handleSave() {
-    const updatedProduct = updateProduct(currentProduct.id, {
+  async function handleSave() {
+    const updatedProduct = await updateProduct(currentProduct.id, {
       name: form.name,
       sku: form.sku,
       barcode: form.barcode,
@@ -503,19 +503,19 @@ export function ProductDetailPageClient() {
     setIsEditing(false)
   }
 
-  function handleArchive() {
-    updateProduct(currentProduct.id, { status: 'archived' })
+  async function handleArchive() {
+    await updateProduct(currentProduct.id, { status: 'archived' })
     toast.success('Urun arsive alindi')
   }
 
-  function handleStockAdjustment() {
+  async function handleStockAdjustment() {
     const qty = Number(movementQty || 0)
     if (!qty) {
       toast.error('Gecerli bir stok miktari girin')
       return
     }
 
-    const movement = addStockMovement({
+    const movement = await addStockMovement({
       productId: currentProduct.id,
       type: 'adjustment',
       qty,
@@ -649,7 +649,7 @@ export function ProductDetailPageClient() {
                   onChange={(event) => updateField('description', event.target.value)}
                 />
               </Field>
-              <Button onClick={handleSave}>Degisiklikleri Kaydet</Button>
+              <Button onClick={() => void handleSave()}>Degisiklikleri Kaydet</Button>
             </FieldGroup>
           ) : (
             <>
@@ -737,7 +737,7 @@ export function ProductDetailPageClient() {
                   />
                 </Field>
               </div>
-              <Button variant="outline" onClick={handleArchive}>
+              <Button variant="outline" onClick={() => void handleArchive()}>
                 Urunu Arsivle
               </Button>
             </>
@@ -800,7 +800,7 @@ export function ProductDetailPageClient() {
                   value={movementNote}
                   onChange={(event) => setMovementNote(event.target.value)}
                 />
-                <Button onClick={handleStockAdjustment}>Hareketi Kaydet</Button>
+                <Button onClick={() => void handleStockAdjustment()}>Hareketi Kaydet</Button>
               </div>
             </div>
           ) : null}

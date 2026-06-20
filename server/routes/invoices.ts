@@ -40,10 +40,22 @@ invoicesRoutes.get('/', async (c) => {
     .select()
     .from(invoices)
     .where(filters.length ? and(...filters) : undefined)
+  const lines = await db.select().from(invoiceLines)
   const now = new Date().toISOString().slice(0, 10)
   const normalized = items.map((item) => ({
     ...item,
     status: item.status === 'sent' && item.dueDate < now ? 'overdue' : item.status,
+    relatedQuotation: item.relatedQuotationId,
+    lines: lines
+      .filter((line) => line.invoiceId === item.id)
+      .sort((a, b) => a.lineOrder - b.lineOrder)
+      .map((line) => ({
+        productId: line.productId,
+        product: line.product,
+        quantity: Number(line.quantity),
+        unitPrice: Number(line.unitPrice),
+        taxRate: Number(line.taxRate),
+      })),
   }))
   return ok(c, normalized)
 })
@@ -53,7 +65,19 @@ invoicesRoutes.get('/:id', async (c) => {
   const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id))
   if (!invoice) return fail(c, 404, 'Invoice not found')
   const lines = await db.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, id))
-  return ok(c, { ...invoice, lines })
+  return ok(c, {
+    ...invoice,
+    relatedQuotation: invoice.relatedQuotationId,
+    lines: lines
+      .sort((a, b) => a.lineOrder - b.lineOrder)
+      .map((line) => ({
+        productId: line.productId,
+        product: line.product,
+        quantity: Number(line.quantity),
+        unitPrice: Number(line.unitPrice),
+        taxRate: Number(line.taxRate),
+      })),
+  })
 })
 
 invoicesRoutes.post('/', validate(invoiceSchema), async (c) => {

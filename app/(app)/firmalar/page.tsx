@@ -1,8 +1,12 @@
+'use client'
+
 import { PageHeader } from '@/components/shared/page-header'
 import { MetricGrid, SectionCard } from '@/components/shared/module-primitives'
-import { companies } from '@/lib/data/crm'
+import { useErpCollections } from '@/hooks/use-erp-store'
 
 export default function CompaniesPage() {
+  const { companies } = useErpCollections()
+
   return (
     <>
       <PageHeader

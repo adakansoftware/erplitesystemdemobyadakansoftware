@@ -162,8 +162,8 @@ export function NewPurchasePageClient() {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
-  function handleSave() {
-    const nextPurchase = createPurchaseOrder({
+  async function handleSave() {
+    const nextPurchase = await createPurchaseOrder({
       supplier: form.supplier,
       orderDate: form.orderDate,
       expectedDate: form.expectedDate,
@@ -185,6 +185,11 @@ export function NewPurchasePageClient() {
       ],
     })
 
+    if (!nextPurchase) {
+      toast.error('Satin alma siparisi olusturulamadi')
+      return
+    }
+
     toast.success('Satin alma siparisi olusturuldu')
     router.push(`/satin-alma/${nextPurchase.id}`)
   }
@@ -196,7 +201,7 @@ export function NewPurchasePageClient() {
         description="Tedarikciye gidecek siparis belgesini hazirlayin."
       >
         <Button variant="outline" render={<Link href="/satin-alma">Vazgec</Link>} />
-        <Button onClick={handleSave}>Siparisi Kaydet</Button>
+        <Button onClick={() => void handleSave()}>Siparisi Kaydet</Button>
       </PageHeader>
 
       <div className="grid gap-4 xl:grid-cols-3">

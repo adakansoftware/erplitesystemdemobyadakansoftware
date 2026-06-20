@@ -38,9 +38,25 @@ purchaseOrdersRoutes.get('/', async (c) => {
     status ? eq(purchaseOrders.status, status) : undefined,
     search ? ilike(purchaseOrders.supplier, `%${search}%`) : undefined,
   ].filter(Boolean)
+  const items = await db.select().from(purchaseOrders).where(filters.length ? and(...filters) : undefined)
+  const lines = await db.select().from(purchaseOrderLines)
   return ok(
     c,
-    await db.select().from(purchaseOrders).where(filters.length ? and(...filters) : undefined),
+    items.map((item) => ({
+      ...item,
+      lines: lines
+        .filter((line) => line.purchaseOrderId === item.id)
+        .sort((a, b) => a.lineOrder - b.lineOrder)
+        .map((line) => ({
+          id: line.id,
+          productId: line.productId,
+          product: line.product,
+          qty: Number(line.quantity),
+          unitPrice: Number(line.unitPrice),
+          taxRate: Number(line.taxRate),
+          receivedQty: Number(line.receivedQty ?? 0),
+        })),
+    })),
   )
 })
 
@@ -49,7 +65,20 @@ purchaseOrdersRoutes.get('/:id', async (c) => {
   const [purchase] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id))
   if (!purchase) return fail(c, 404, 'Purchase order not found')
   const lines = await db.select().from(purchaseOrderLines).where(eq(purchaseOrderLines.purchaseOrderId, id))
-  return ok(c, { ...purchase, lines })
+  return ok(c, {
+    ...purchase,
+    lines: lines
+      .sort((a, b) => a.lineOrder - b.lineOrder)
+      .map((line) => ({
+        id: line.id,
+        productId: line.productId,
+        product: line.product,
+        qty: Number(line.quantity),
+        unitPrice: Number(line.unitPrice),
+        taxRate: Number(line.taxRate),
+        receivedQty: Number(line.receivedQty ?? 0),
+      })),
+  })
 })
 
 purchaseOrdersRoutes.post('/', validate(purchaseSchema), async (c) => {

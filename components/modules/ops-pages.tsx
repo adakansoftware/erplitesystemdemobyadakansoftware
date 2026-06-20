@@ -23,16 +23,11 @@ import {
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  accountStatements,
   balanceMeta,
   defaultStatement,
 } from '@/lib/data/accounts'
-import { deals, dealStageMeta, leads, leadStatusMeta, taskPriorityMeta } from '@/lib/data/crm'
-import {
-  financeAccounts,
-  transactionMeta,
-  transactions,
-} from '@/lib/data/finance'
+import { dealStageMeta, leadStatusMeta, taskPriorityMeta } from '@/lib/data/crm'
+import { transactionMeta } from '@/lib/data/finance'
 import { formatCurrency, formatDate, formatNumber } from '@/lib/ui-meta'
 
 function readHash() {
@@ -119,8 +114,8 @@ export function CurrentAccountsPageClient() {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
-  function handleCreate() {
-    const nextAccount = createCurrentAccount({
+  async function handleCreate() {
+    const nextAccount = await createCurrentAccount({
       name: form.name,
       type: form.type as 'customer' | 'supplier',
       taxNumber: form.taxNumber,
@@ -136,12 +131,12 @@ export function CurrentAccountsPageClient() {
     setIsFormOpen(false)
   }
 
-  function handleUpdate() {
+  async function handleUpdate() {
     if (!selectedAccount) {
       return
     }
 
-    updateCurrentAccount(selectedAccount.id, {
+    await updateCurrentAccount(selectedAccount.id, {
       name: form.name,
       type: form.type as 'customer' | 'supplier',
       taxNumber: form.taxNumber,
@@ -155,12 +150,12 @@ export function CurrentAccountsPageClient() {
     toast.success('Cari hesap guncellendi')
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!selectedAccount) {
       return
     }
 
-    deleteCurrentAccount(selectedAccount.id)
+    await deleteCurrentAccount(selectedAccount.id)
     toast.success('Cari hesap silindi')
     setSelectedId(currentAccounts[0]?.id ?? '')
   }
@@ -333,11 +328,11 @@ export function CurrentAccountsPageClient() {
               </div>
             </FieldGroup>
             <div className="flex gap-2">
-              <Button onClick={isFormOpen ? handleCreate : handleUpdate}>
+              <Button onClick={() => void (isFormOpen ? handleCreate() : handleUpdate())}>
                 {isFormOpen ? 'Cariyi Kaydet' : 'Degisiklikleri Kaydet'}
               </Button>
               {!isFormOpen ? (
-                <Button variant="outline" onClick={handleDelete}>
+                <Button variant="outline" onClick={() => void handleDelete()}>
                   Sil
                 </Button>
               ) : null}
@@ -366,6 +361,7 @@ export function CurrentAccountsPageClient() {
 }
 
 export function FinancePageClient() {
+  const { financeAccounts, transactions } = useErpCollections()
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<'all' | 'cash' | 'bank'>('all')
 
@@ -531,6 +527,7 @@ export function FinancePageClient() {
 }
 
 export function LeadsPageClient() {
+  const { leads } = useErpCollections()
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<
     'all' | 'new' | 'contacted' | 'qualified' | 'lost'
@@ -664,6 +661,7 @@ export function LeadsPageClient() {
 }
 
 export function DealsPageClient() {
+  const { deals } = useErpCollections()
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<
     'all' | 'lead' | 'proposal' | 'negotiation' | 'won' | 'lost'
@@ -897,8 +895,8 @@ export function TasksPageClient() {
               />
             </div>
             <Button
-              onClick={() => {
-                createTask({
+              onClick={async () => {
+                await createTask({
                   title: form.title,
                   related: form.related,
                   due: form.due,
@@ -953,8 +951,8 @@ export function TasksPageClient() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => {
-                            toggleTask(task.id)
+                          onClick={async () => {
+                            await toggleTask(task.id)
                             toast.success('Gorev durumu guncellendi')
                           }}
                         >
@@ -963,8 +961,8 @@ export function TasksPageClient() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => {
-                            deleteTask(task.id)
+                          onClick={async () => {
+                            await deleteTask(task.id)
                             toast.success('Gorev silindi')
                           }}
                         >
@@ -998,8 +996,8 @@ export function SettingsPageClient() {
     setForm((current: AppSettings) => ({ ...current, [key]: value }))
   }
 
-  function handleSave() {
-    updateSettings(form)
+  async function handleSave() {
+    await updateSettings(form)
     toast.success('Ayarlar kaydedildi')
   }
 
@@ -1008,7 +1006,7 @@ export function SettingsPageClient() {
       <PageHeader
         title="Ayarlar"
         description="Sistem genel ayarlari ve operasyon tercihleri."
-        actions={<Button onClick={handleSave}>Degisiklikleri Kaydet</Button>}
+        actions={<Button onClick={() => void handleSave()}>Degisiklikleri Kaydet</Button>}
       />
 
       <Tabs defaultValue="company">

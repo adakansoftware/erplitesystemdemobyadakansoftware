@@ -174,8 +174,8 @@ export function NewQuotationPageClient() {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
-  function handleSave() {
-    const nextQuotation = createQuotation({
+  async function handleSave() {
+    const nextQuotation = await createQuotation({
       customer: form.customer,
       date: form.date,
       validUntil: form.validUntil,
@@ -197,6 +197,11 @@ export function NewQuotationPageClient() {
       ],
     })
 
+    if (!nextQuotation) {
+      toast.error('Teklif olusturulamadi')
+      return
+    }
+
     toast.success('Teklif olusturuldu')
     router.push(`/teklifler/${nextQuotation.id}`)
   }
@@ -208,7 +213,7 @@ export function NewQuotationPageClient() {
         description="Musteri teklifi icin kullanilan teklif olusturma ekrani."
       >
         <Button variant="outline" render={<Link href="/teklifler">Vazgec</Link>} />
-        <Button onClick={handleSave}>Teklifi Kaydet</Button>
+        <Button onClick={() => void handleSave()}>Teklifi Kaydet</Button>
       </PageHeader>
 
       <div className="grid gap-4 xl:grid-cols-3">
@@ -363,8 +368,8 @@ export function QuotationDetailPageClient() {
   const meta = quotationStatusMeta[currentQuotation.status]
   const totals = quotationTotals(currentQuotation.lines)
 
-  function handleConvert() {
-    const nextInvoice = convertQuotationToInvoice(currentQuotation.id)
+  async function handleConvert() {
+    const nextInvoice = await convertQuotationToInvoice(currentQuotation.id)
 
     if (!nextInvoice) {
       toast.error('Teklif faturaya donusturulemedi')
@@ -407,7 +412,7 @@ export function QuotationDetailPageClient() {
         <Button variant="outline" onClick={() => window.print()}>
           Yazdir / PDF
         </Button>
-        <Button onClick={handleConvert}>Faturaya Cevir</Button>
+        <Button onClick={() => void handleConvert()}>Faturaya Cevir</Button>
         <Button render={<Link href="/teklifler/yeni">Yeni Teklif</Link>} />
       </PageHeader>
 

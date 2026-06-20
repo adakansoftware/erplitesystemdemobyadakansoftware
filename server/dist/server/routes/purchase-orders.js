@@ -37,7 +37,23 @@ exports.purchaseOrdersRoutes.get('/', async (c) => {
         status ? (0, drizzle_orm_1.eq)(schema_1.purchaseOrders.status, status) : undefined,
         search ? (0, drizzle_orm_1.ilike)(schema_1.purchaseOrders.supplier, `%${search}%`) : undefined,
     ].filter(Boolean);
-    return (0, http_1.ok)(c, await client_1.db.select().from(schema_1.purchaseOrders).where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined));
+    const items = await client_1.db.select().from(schema_1.purchaseOrders).where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined);
+    const lines = await client_1.db.select().from(schema_1.purchaseOrderLines);
+    return (0, http_1.ok)(c, items.map((item) => ({
+        ...item,
+        lines: lines
+            .filter((line) => line.purchaseOrderId === item.id)
+            .sort((a, b) => a.lineOrder - b.lineOrder)
+            .map((line) => ({
+            id: line.id,
+            productId: line.productId,
+            product: line.product,
+            qty: Number(line.quantity),
+            unitPrice: Number(line.unitPrice),
+            taxRate: Number(line.taxRate),
+            receivedQty: Number(line.receivedQty ?? 0),
+        })),
+    })));
 });
 exports.purchaseOrdersRoutes.get('/:id', async (c) => {
     const id = c.req.param('id');
@@ -45,7 +61,20 @@ exports.purchaseOrdersRoutes.get('/:id', async (c) => {
     if (!purchase)
         return (0, http_1.fail)(c, 404, 'Purchase order not found');
     const lines = await client_1.db.select().from(schema_1.purchaseOrderLines).where((0, drizzle_orm_1.eq)(schema_1.purchaseOrderLines.purchaseOrderId, id));
-    return (0, http_1.ok)(c, { ...purchase, lines });
+    return (0, http_1.ok)(c, {
+        ...purchase,
+        lines: lines
+            .sort((a, b) => a.lineOrder - b.lineOrder)
+            .map((line) => ({
+            id: line.id,
+            productId: line.productId,
+            product: line.product,
+            qty: Number(line.quantity),
+            unitPrice: Number(line.unitPrice),
+            taxRate: Number(line.taxRate),
+            receivedQty: Number(line.receivedQty ?? 0),
+        })),
+    });
 });
 exports.purchaseOrdersRoutes.post('/', (0, validate_1.validate)(purchaseSchema), async (c) => {
     const body = c.get('validatedBody');

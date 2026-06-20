@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { api } from '@/lib/api/client'
 
 export type AppSettings = {
   companyName: string
@@ -14,7 +15,7 @@ export type AppSettings = {
   dailySummaryEmail: boolean
 }
 
-const STORAGE_KEY = 'erp-lite-app-settings'
+const STORAGE_KEY = 'erp-lite-app-settings-ui'
 
 const defaultSettings: AppSettings = {
   companyName: 'Adakan Endustriyel Cozumler Ltd. Sti.',
@@ -35,29 +36,82 @@ export function useAppSettings() {
   const [isReady, setIsReady] = useState(false)
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
+    let cancelled = false
+
+    async function load() {
+      let uiSettings: Partial<AppSettings> = {}
+
+      if (typeof window !== 'undefined') {
+        try {
+          const rawValue = window.localStorage.getItem(STORAGE_KEY)
+          if (rawValue) {
+            uiSettings = JSON.parse(rawValue) as Partial<AppSettings>
+          }
+        } catch {
+          uiSettings = {}
+        }
+      }
+
+      try {
+        const remote = await api.get<any>('/settings')
+        if (cancelled) {
+          return
+        }
+
+        setSettings({
+          ...defaultSettings,
+          ...uiSettings,
+          companyName: remote?.name ?? defaultSettings.companyName,
+          companyAddress: remote?.address ?? defaultSettings.companyAddress,
+          taxOffice: remote?.taxOffice ?? defaultSettings.taxOffice,
+          taxNumber: remote?.taxNumber ?? defaultSettings.taxNumber,
+          phone: remote?.phone ?? defaultSettings.phone,
+          email: remote?.email ?? defaultSettings.email,
+          website: remote?.website ?? defaultSettings.website,
+          logoUrl: remote?.logoUrl ?? defaultSettings.logoUrl,
+        })
+      } catch {
+        if (!cancelled) {
+          setSettings({ ...defaultSettings, ...uiSettings })
+        }
+      } finally {
+        if (!cancelled) {
+          setIsReady(true)
+        }
+      }
     }
 
-    try {
-      const rawValue = window.localStorage.getItem(STORAGE_KEY)
-      if (rawValue) {
-        const parsed = JSON.parse(rawValue) as Partial<AppSettings>
-        setSettings({ ...defaultSettings, ...parsed })
-      }
-    } catch {
-      setSettings(defaultSettings)
-    } finally {
-      setIsReady(true)
+    void load()
+
+    return () => {
+      cancelled = true
     }
   }, [])
 
-  const updateSettings = (nextSettings: AppSettings) => {
+  const updateSettings = async (nextSettings: AppSettings) => {
     setSettings(nextSettings)
 
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSettings))
+    const uiSettings = {
+      lowStockAlerts: nextSettings.lowStockAlerts,
+      overdueInvoiceAlerts: nextSettings.overdueInvoiceAlerts,
+      dailySummaryEmail: nextSettings.dailySummaryEmail,
     }
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(uiSettings))
+    }
+
+    await api.put('/settings', {
+      name: nextSettings.companyName,
+      address: nextSettings.companyAddress,
+      taxOffice: nextSettings.taxOffice,
+      taxNumber: nextSettings.taxNumber,
+      phone: nextSettings.phone,
+      email: nextSettings.email,
+      website: nextSettings.website,
+      logoUrl: nextSettings.logoUrl,
+      currency: 'TRY',
+    })
   }
 
   return {

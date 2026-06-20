@@ -38,7 +38,24 @@ quotationsRoutes.get('/', async (c) => {
     .select()
     .from(quotations)
     .where(filters.length ? and(...filters) : undefined)
-  return ok(c, items)
+  const lines = await db.select().from(quotationLines)
+  return ok(
+    c,
+    items.map((item) => ({
+      ...item,
+      relatedInvoice: item.convertedToInvoiceId,
+      lines: lines
+        .filter((line) => line.quotationId === item.id)
+        .sort((a, b) => a.lineOrder - b.lineOrder)
+        .map((line) => ({
+          productId: line.productId,
+          product: line.product,
+          quantity: Number(line.quantity),
+          unitPrice: Number(line.unitPrice),
+          taxRate: Number(line.taxRate),
+        })),
+    })),
+  )
 })
 
 quotationsRoutes.get('/:id', async (c) => {
@@ -46,7 +63,19 @@ quotationsRoutes.get('/:id', async (c) => {
   const [quotation] = await db.select().from(quotations).where(eq(quotations.id, id))
   if (!quotation) return fail(c, 404, 'Quotation not found')
   const lines = await db.select().from(quotationLines).where(eq(quotationLines.quotationId, id))
-  return ok(c, { ...quotation, lines })
+  return ok(c, {
+    ...quotation,
+    relatedInvoice: quotation.convertedToInvoiceId,
+    lines: lines
+      .sort((a, b) => a.lineOrder - b.lineOrder)
+      .map((line) => ({
+        productId: line.productId,
+        product: line.product,
+        quantity: Number(line.quantity),
+        unitPrice: Number(line.unitPrice),
+        taxRate: Number(line.taxRate),
+      })),
+  })
 })
 
 quotationsRoutes.post('/', validate(quotationSchema), async (c) => {

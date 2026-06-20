@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
-import { products, stockMovements, warehouses } from '../db/schema'
+import { productCategories, products, stockMovements, warehouses } from '../db/schema'
 import { getProductStock } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
 import { validate } from '../middleware/validate'
@@ -11,7 +11,7 @@ const movementSchema = z.object({
   productId: z.string(),
   warehouseId: z.string().optional().nullable(),
   type: z.enum(['in', 'out', 'transfer', 'adjustment']),
-  qty: z.coerce.number().positive(),
+  qty: z.coerce.number().refine((value) => value !== 0, 'Qty must not be zero'),
   note: z.string().optional().nullable(),
   unitCost: z.coerce.number().optional(),
 })
@@ -41,15 +41,36 @@ stockRoutes.get('/movements', async (c) => {
     .select()
     .from(stockMovements)
     .where(filters.length ? and(...filters) : undefined)
+  const [productItems, warehouseItems] = await Promise.all([
+    db.select().from(products),
+    db.select().from(warehouses),
+  ])
+  const productMap = new Map(productItems.map((product) => [product.id, product]))
+  const warehouseMap = new Map(warehouseItems.map((warehouse) => [warehouse.id, warehouse.name]))
 
-  return ok(c, result)
+  return ok(
+    c,
+    result.map((movement) => {
+      const product = productMap.get(movement.productId)
+      return {
+        ...movement,
+        qty: Number(movement.qty),
+        product: product?.name ?? movement.productId,
+        sku: product?.sku ?? '',
+        warehouse: movement.warehouseId ? warehouseMap.get(movement.warehouseId) ?? movement.warehouseId : 'Merkez Depo',
+        relatedDoc: movement.relatedDocId,
+        user: 'ERP Lite',
+        date: movement.createdAt.toISOString().slice(0, 10),
+      }
+    }),
+  )
 })
 
 stockRoutes.post('/movements', validate(movementSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof movementSchema>
   if (body.type === 'out') {
     const currentStock = await getProductStock(body.productId)
-    if (currentStock < body.qty) {
+    if (currentStock < Math.abs(body.qty)) {
       return fail(c, 422, 'Insufficient stock')
     }
   }
@@ -73,10 +94,17 @@ stockRoutes.post('/movements', validate(movementSchema), async (c) => {
 })
 
 stockRoutes.get('/summary', async (c) => {
-  const items = await db.select().from(products)
+  const [items, categories] = await Promise.all([
+    db.select().from(products),
+    db.select().from(productCategories),
+  ])
+  const categoryMap = new Map(categories.map((category) => [category.id, category.name]))
   const summary = await Promise.all(
     items.map(async (item) => ({
       ...item,
+      category: item.categoryId ? categoryMap.get(item.categoryId) ?? '' : '',
+      supplierPrice: Number(item.costPrice ?? 0),
+      stock: await getProductStock(item.id),
       totalStock: await getProductStock(item.id),
     })),
   )

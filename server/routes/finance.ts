@@ -66,7 +66,20 @@ financeRoutes.get('/transactions', async (c) => {
     type ? eq(transactions.type, type) : undefined,
   ].filter(Boolean)
 
-  return ok(c, await db.select().from(transactions).where(filters.length ? and(...filters) : undefined))
+  const [txs, accounts] = await Promise.all([
+    db.select().from(transactions).where(filters.length ? and(...filters) : undefined),
+    db.select().from(financeAccounts),
+  ])
+  const accountMap = new Map(accounts.map((account) => [account.id, account.name]))
+
+  return ok(
+    c,
+    txs.map((item) => ({
+      ...item,
+      amount: Number(item.amount),
+      account: accountMap.get(item.financeAccountId) ?? item.financeAccountId,
+    })),
+  )
 })
 
 financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {

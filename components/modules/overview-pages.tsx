@@ -36,8 +36,7 @@ import {
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useErpCollections } from '@/hooks/use-erp-store'
-import { financeAccounts } from '@/lib/data/finance'
-import { movementMeta, stockMovements, warehouses } from '@/lib/data/inventory'
+import { movementMeta } from '@/lib/data/inventory'
 import { getStockStatus, productStatusMeta } from '@/lib/data/products'
 import { invoiceStatusMeta, invoiceTotals } from '@/lib/data/invoices'
 import { quotationStatusMeta, quotationTotals } from '@/lib/data/quotations'
@@ -52,7 +51,7 @@ function normalize(value: string) {
 }
 
 export function DashboardPageClient() {
-  const { invoices, products, quotations } = useErpCollections()
+  const { financeAccounts, invoices, products, quotations } = useErpCollections()
 
   const recentInvoices = invoices.slice(0, 5)
   const lowStock = products.filter((product) => product.stock <= product.reorderPoint)
@@ -244,7 +243,7 @@ export function DashboardPageClient() {
 }
 
 export function StockPageClient() {
-  const { products } = useErpCollections()
+  const { products, stockMovements, warehouses } = useErpCollections()
   const [query, setQuery] = useState('')
   const [stockTab, setStockTab] = useState('all')
   const [movementTab, setMovementTab] = useState('all')
@@ -514,7 +513,7 @@ export function StockPageClient() {
 }
 
 export function ReportsPageClient() {
-  const { invoices, products, quotations } = useErpCollections()
+  const { invoices, products, quotations, warehouses } = useErpCollections()
   const [reportTab, setReportTab] = useState('summary')
 
   const monthlyRevenue = invoices

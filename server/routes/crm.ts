@@ -166,6 +166,12 @@ crmRoutes.patch('/tasks/:id/toggle', async (c) => {
   return ok(c, { id, done: !task?.done })
 })
 
+crmRoutes.delete('/tasks/:id', async (c) => {
+  const id = c.req.param('id')
+  await db.delete(tasks).where(eq(tasks.id, id))
+  return ok(c, { id })
+})
+
 crmRoutes.get('/pipeline', async (c) => {
   const items = await db.select().from(deals)
   const grouped = items.reduce<Record<string, { count: number; totalValue: number }>>(

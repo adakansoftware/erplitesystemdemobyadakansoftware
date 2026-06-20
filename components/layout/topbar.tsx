@@ -82,8 +82,8 @@ export function Topbar() {
     submitSearch()
   }
 
-  function handleLogout() {
-    logout()
+  async function handleLogout() {
+    await logout()
     router.replace('/login')
   }
 
@@ -236,7 +236,7 @@ export function Topbar() {
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onClick={handleLogout}>
+              <DropdownMenuItem variant="destructive" onClick={() => void handleLogout()}>
                 <LogOut />
                 Cikis Yap
               </DropdownMenuItem>

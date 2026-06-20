@@ -39,10 +39,22 @@ exports.invoicesRoutes.get('/', async (c) => {
         .select()
         .from(schema_1.invoices)
         .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined);
+    const lines = await client_1.db.select().from(schema_1.invoiceLines);
     const now = new Date().toISOString().slice(0, 10);
     const normalized = items.map((item) => ({
         ...item,
         status: item.status === 'sent' && item.dueDate < now ? 'overdue' : item.status,
+        relatedQuotation: item.relatedQuotationId,
+        lines: lines
+            .filter((line) => line.invoiceId === item.id)
+            .sort((a, b) => a.lineOrder - b.lineOrder)
+            .map((line) => ({
+            productId: line.productId,
+            product: line.product,
+            quantity: Number(line.quantity),
+            unitPrice: Number(line.unitPrice),
+            taxRate: Number(line.taxRate),
+        })),
     }));
     return (0, http_1.ok)(c, normalized);
 });
@@ -52,7 +64,19 @@ exports.invoicesRoutes.get('/:id', async (c) => {
     if (!invoice)
         return (0, http_1.fail)(c, 404, 'Invoice not found');
     const lines = await client_1.db.select().from(schema_1.invoiceLines).where((0, drizzle_orm_1.eq)(schema_1.invoiceLines.invoiceId, id));
-    return (0, http_1.ok)(c, { ...invoice, lines });
+    return (0, http_1.ok)(c, {
+        ...invoice,
+        relatedQuotation: invoice.relatedQuotationId,
+        lines: lines
+            .sort((a, b) => a.lineOrder - b.lineOrder)
+            .map((line) => ({
+            productId: line.productId,
+            product: line.product,
+            quantity: Number(line.quantity),
+            unitPrice: Number(line.unitPrice),
+            taxRate: Number(line.taxRate),
+        })),
+    });
 });
 exports.invoicesRoutes.post('/', (0, validate_1.validate)(invoiceSchema), async (c) => {
     const body = c.get('validatedBody');

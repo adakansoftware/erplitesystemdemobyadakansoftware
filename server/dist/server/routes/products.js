@@ -14,6 +14,7 @@ const createSchema = zod_1.z.object({
     name: zod_1.z.string().min(2),
     sku: zod_1.z.string().min(2),
     barcode: zod_1.z.string().optional().nullable(),
+    category: zod_1.z.string().optional().nullable(),
     categoryId: zod_1.z.string().uuid().optional().nullable(),
     brand: zod_1.z.string().optional().nullable(),
     unit: zod_1.z.string().default('Adet'),
@@ -26,6 +27,20 @@ const createSchema = zod_1.z.object({
 });
 const updateSchema = createSchema.partial();
 exports.productsRoutes = new hono_1.Hono();
+async function resolveCategoryId(input, existingId) {
+    if (existingId) {
+        return existingId;
+    }
+    if (!input) {
+        return undefined;
+    }
+    const [existing] = await client_1.db.select().from(schema_1.productCategories).where((0, drizzle_orm_1.eq)(schema_1.productCategories.name, input));
+    if (existing) {
+        return existing.id;
+    }
+    const [createdCategory] = await client_1.db.insert(schema_1.productCategories).values({ name: input }).returning();
+    return createdCategory.id;
+}
 exports.productsRoutes.get('/', async (c) => {
     const search = c.req.query('search');
     const category = c.req.query('category');
@@ -41,7 +56,15 @@ exports.productsRoutes.get('/', async (c) => {
         .select()
         .from(schema_1.products)
         .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined);
-    return (0, http_1.ok)(c, await (0, rules_1.attachProductStocks)(result));
+    const categories = await client_1.db.select().from(schema_1.productCategories);
+    const categoryMap = new Map(categories.map((category) => [category.id, category.name]));
+    const withStocks = await (0, rules_1.attachProductStocks)(result);
+    return (0, http_1.ok)(c, withStocks.map((item) => ({
+        ...item,
+        category: item.categoryId ? categoryMap.get(item.categoryId) ?? '' : '',
+        stock: item.totalStock,
+        supplierPrice: Number(item.costPrice ?? 0),
+    })));
 });
 exports.productsRoutes.get('/low-stock', async (c) => {
     const result = await client_1.db.select().from(schema_1.products);
@@ -55,11 +78,32 @@ exports.productsRoutes.get('/:id', async (c) => {
         return (0, http_1.fail)(c, 404, 'Product not found');
     }
     const totalStock = await (0, rules_1.getProductStock)(product.id);
+    const [category] = product.categoryId
+        ? await client_1.db.select().from(schema_1.productCategories).where((0, drizzle_orm_1.eq)(schema_1.productCategories.id, product.categoryId))
+        : [null];
+    const warehouseItems = await client_1.db.select().from(schema_1.warehouses);
+    const warehouseMap = new Map(warehouseItems.map((warehouse) => [warehouse.id, warehouse.name]));
     const movements = await client_1.db
         .select()
         .from(schema_1.stockMovements)
         .where((0, drizzle_orm_1.eq)(schema_1.stockMovements.productId, product.id));
-    return (0, http_1.ok)(c, { ...product, totalStock, stockMovements: movements });
+    return (0, http_1.ok)(c, {
+        ...product,
+        category: category?.name ?? '',
+        stock: totalStock,
+        totalStock,
+        supplierPrice: Number(product.costPrice ?? 0),
+        stockMovements: movements.map((movement) => ({
+            ...movement,
+            qty: Number(movement.qty),
+            product: product.name,
+            sku: product.sku,
+            warehouse: movement.warehouseId ? warehouseMap.get(movement.warehouseId) ?? movement.warehouseId : 'Merkez Depo',
+            relatedDoc: movement.relatedDocId,
+            user: 'ERP Lite',
+            date: movement.createdAt.toISOString().slice(0, 10),
+        })),
+    });
 });
 exports.productsRoutes.get('/:id/stock', async (c) => {
     const id = c.req.param('id');
@@ -75,12 +119,21 @@ exports.productsRoutes.get('/:id/stock', async (c) => {
 });
 exports.productsRoutes.post('/', (0, validate_1.validate)(createSchema), async (c) => {
     const body = c.get('validatedBody');
+    const categoryId = await resolveCategoryId(body.category, body.categoryId);
     await client_1.db.insert(schema_1.products).values({
         id: body.id ?? `PRD-${Date.now()}`,
-        ...body,
+        name: body.name,
+        sku: body.sku,
+        barcode: body.barcode,
+        categoryId,
+        brand: body.brand,
+        unit: body.unit,
         costPrice: String(body.costPrice),
         salePrice: String(body.salePrice),
         taxRate: String(body.taxRate),
+        reorderPoint: body.reorderPoint,
+        status: body.status,
+        description: body.description,
     });
     const [product] = await client_1.db.select().from(schema_1.products).where((0, drizzle_orm_1.eq)(schema_1.products.sku, body.sku));
     return (0, http_1.created)(c, product);
@@ -88,13 +141,22 @@ exports.productsRoutes.post('/', (0, validate_1.validate)(createSchema), async (
 exports.productsRoutes.put('/:id', (0, validate_1.validate)(updateSchema), async (c) => {
     const id = c.req.param('id');
     const body = c.get('validatedBody');
+    const categoryId = await resolveCategoryId(body.category, body.categoryId);
     await client_1.db
         .update(schema_1.products)
         .set({
-        ...body,
+        name: body.name,
+        sku: body.sku,
+        barcode: body.barcode,
+        categoryId,
+        brand: body.brand,
+        unit: body.unit,
         costPrice: body.costPrice != null ? String(body.costPrice) : undefined,
         salePrice: body.salePrice != null ? String(body.salePrice) : undefined,
         taxRate: body.taxRate != null ? String(body.taxRate) : undefined,
+        reorderPoint: body.reorderPoint,
+        status: body.status,
+        description: body.description,
         updatedAt: new Date(),
     })
         .where((0, drizzle_orm_1.eq)(schema_1.products.id, id));

@@ -59,7 +59,16 @@ exports.financeRoutes.get('/transactions', async (c) => {
         accountId ? (0, drizzle_orm_1.eq)(schema_1.transactions.financeAccountId, accountId) : undefined,
         type ? (0, drizzle_orm_1.eq)(schema_1.transactions.type, type) : undefined,
     ].filter(Boolean);
-    return (0, http_1.ok)(c, await client_1.db.select().from(schema_1.transactions).where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined));
+    const [txs, accounts] = await Promise.all([
+        client_1.db.select().from(schema_1.transactions).where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined),
+        client_1.db.select().from(schema_1.financeAccounts),
+    ]);
+    const accountMap = new Map(accounts.map((account) => [account.id, account.name]));
+    return (0, http_1.ok)(c, txs.map((item) => ({
+        ...item,
+        amount: Number(item.amount),
+        account: accountMap.get(item.financeAccountId) ?? item.financeAccountId,
+    })));
 });
 exports.financeRoutes.post('/transactions', (0, validate_1.validate)(transactionSchema), async (c) => {
     const body = c.get('validatedBody');
