@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { ArrowLeftRight, Package, Pencil, Plus, Warehouse } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
@@ -193,6 +193,7 @@ export function NewProductPageClient() {
       brand: form.brand,
       unit: form.unit,
       costPrice: Number(form.costPrice || 0),
+      supplierPrice: Number(form.costPrice || 0),
       salePrice: Number(form.salePrice || 0),
       taxRate: Number(form.taxRate || 0),
       stock: Number(form.stock || 0),
@@ -406,8 +407,51 @@ export function NewProductPageClient() {
 
 export function ProductDetailPageClient() {
   const params = useParams<{ id: string }>()
-  const { getProductById, hydrated } = useErpCollections()
+  const { getProductById, updateProduct, addStockMovement, hydrated } = useErpCollections()
   const product = getProductById(params.id)
+  const [isEditing, setIsEditing] = useState(false)
+  const [stockModeOpen, setStockModeOpen] = useState(false)
+  const [movementQty, setMovementQty] = useState('0')
+  const [movementNote, setMovementNote] = useState('Sayim ve duzeltme hareketi.')
+  const [form, setForm] = useState({
+    name: '',
+    sku: '',
+    barcode: '',
+    category: '',
+    brand: '',
+    unit: '',
+    costPrice: '0',
+    supplierPrice: '0',
+    salePrice: '0',
+    taxRate: '0',
+    stock: '0',
+    reorderPoint: '0',
+    description: '',
+    status: 'active',
+  })
+
+  useEffect(() => {
+    if (!product) {
+      return
+    }
+
+    setForm({
+      name: product.name,
+      sku: product.sku,
+      barcode: product.barcode,
+      category: product.category,
+      brand: product.brand,
+      unit: product.unit,
+      costPrice: String(product.costPrice),
+      supplierPrice: String(product.supplierPrice),
+      salePrice: String(product.salePrice),
+      taxRate: String(product.taxRate),
+      stock: String(product.stock),
+      reorderPoint: String(product.reorderPoint),
+      description: product.description,
+      status: product.status,
+    })
+  }, [product])
 
   if (hydrated && !product) {
     return (
@@ -424,37 +468,104 @@ export function ProductDetailPageClient() {
     return null
   }
 
-  const stockMeta = getStockStatus(product)
-  const statusMeta = productStatusMeta[product.status]
+  const currentProduct = product
+  const stockMeta = getStockStatus(currentProduct)
+  const statusMeta = productStatusMeta[currentProduct.status]
+
+  function updateField<K extends keyof typeof form>(key: K, value: string) {
+    setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  function handleSave() {
+    const updatedProduct = updateProduct(currentProduct.id, {
+      name: form.name,
+      sku: form.sku,
+      barcode: form.barcode,
+      category: form.category,
+      brand: form.brand,
+      unit: form.unit,
+      costPrice: Number(form.costPrice || 0),
+      supplierPrice: Number(form.supplierPrice || 0),
+      salePrice: Number(form.salePrice || 0),
+      taxRate: Number(form.taxRate || 0),
+      stock: Number(form.stock || 0),
+      reorderPoint: Number(form.reorderPoint || 0),
+      description: form.description,
+      status: form.status as typeof currentProduct.status,
+    })
+
+    if (!updatedProduct) {
+      toast.error('Urun guncellenemedi')
+      return
+    }
+
+    toast.success('Urun karti guncellendi')
+    setIsEditing(false)
+  }
+
+  function handleArchive() {
+    updateProduct(currentProduct.id, { status: 'archived' })
+    toast.success('Urun arsive alindi')
+  }
+
+  function handleStockAdjustment() {
+    const qty = Number(movementQty || 0)
+    if (!qty) {
+      toast.error('Gecerli bir stok miktari girin')
+      return
+    }
+
+    const movement = addStockMovement({
+      productId: currentProduct.id,
+      type: 'adjustment',
+      qty,
+      note: movementNote,
+      relatedDoc: currentProduct.id,
+    })
+
+    if (!movement) {
+      toast.error('Stok hareketi olusturulamadi')
+      return
+    }
+
+    toast.success('Stok hareketi eklendi')
+    setMovementQty('0')
+    setStockModeOpen(false)
+  }
 
   return (
     <>
       <PageHeader
-        title={product.name}
-        description={`${product.sku} kodlu urun kartinin detay gorunumu.`}
+        title={currentProduct.name}
+        description={`${currentProduct.sku} kodlu urun kartinin detay gorunumu.`}
       >
         <Button variant="outline" render={<Link href="/stok">Stok Hareketi</Link>}>
           <Warehouse data-icon="inline-start" />
         </Button>
-        <Button render={<Link href="/urunler/yeni">Yeni Kart</Link>}>
+        <Button variant="outline" onClick={() => setStockModeOpen((current) => !current)}>
+          <Warehouse data-icon="inline-start" />
+          Stok Hareketi Ekle
+        </Button>
+        <Button onClick={() => setIsEditing((current) => !current)}>
           <Pencil data-icon="inline-start" />
+          {isEditing ? 'Duzenlemeyi Kapat' : 'Duzenle'}
         </Button>
       </PageHeader>
 
       <MetricGrid
         items={[
-          { label: 'Satis Fiyati', value: formatCurrency(product.salePrice) },
-          { label: 'Maliyet', value: formatCurrency(product.costPrice) },
+          { label: 'Satis Fiyati', value: formatCurrency(currentProduct.salePrice) },
+          { label: 'Maliyet', value: formatCurrency(currentProduct.costPrice) },
           {
             label: 'Stok',
-            value: `${product.stock} ${product.unit}`,
+            value: `${currentProduct.stock} ${currentProduct.unit}`,
             badge: stockMeta.label,
             badgeVariant: stockMeta.variant,
           },
           {
             label: 'Durum',
             value: statusMeta.label,
-            badge: `${product.taxRate}% KDV`,
+            badge: `${currentProduct.taxRate}% KDV`,
             badgeVariant: statusMeta.variant,
           },
         ]}
@@ -466,22 +577,103 @@ export function ProductDetailPageClient() {
           description="Kart uzerindeki temel alanlar"
           contentClassName="space-y-4"
         >
-          <DetailList
-            items={[
-              { label: 'Urun Kodu', value: product.id },
-              { label: 'Stok Kodu', value: product.sku },
-              { label: 'Barkod', value: product.barcode },
-              { label: 'Kategori', value: product.category },
-              { label: 'Marka', value: product.brand },
-              { label: 'Olusturma Tarihi', value: formatDate(product.createdAt) },
-            ]}
-          />
-          <div className="rounded-lg border p-4">
-            <p className="text-xs text-muted-foreground">Aciklama</p>
-            <p className="mt-2 whitespace-pre-line text-sm">
-              {product.description}
-            </p>
-          </div>
+          {isEditing ? (
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="edit-name">Urun Adi</FieldLabel>
+                <Input
+                  id="edit-name"
+                  value={form.name}
+                  onChange={(event) => updateField('name', event.target.value)}
+                />
+              </Field>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="edit-sku">Stok Kodu</FieldLabel>
+                  <Input
+                    id="edit-sku"
+                    value={form.sku}
+                    onChange={(event) => updateField('sku', event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="edit-barcode">Barkod</FieldLabel>
+                  <Input
+                    id="edit-barcode"
+                    value={form.barcode}
+                    onChange={(event) => updateField('barcode', event.target.value)}
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="edit-category">Kategori</FieldLabel>
+                  <Input
+                    id="edit-category"
+                    value={form.category}
+                    onChange={(event) => updateField('category', event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="edit-brand">Marka</FieldLabel>
+                  <Input
+                    id="edit-brand"
+                    value={form.brand}
+                    onChange={(event) => updateField('brand', event.target.value)}
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="edit-unit">Birim</FieldLabel>
+                  <Input
+                    id="edit-unit"
+                    value={form.unit}
+                    onChange={(event) => updateField('unit', event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="edit-status">Durum</FieldLabel>
+                  <Input
+                    id="edit-status"
+                    value={form.status}
+                    onChange={(event) => updateField('status', event.target.value)}
+                  />
+                </Field>
+              </div>
+              <Field>
+                <FieldLabel htmlFor="edit-description">Aciklama</FieldLabel>
+                <Textarea
+                  id="edit-description"
+                  value={form.description}
+                  onChange={(event) => updateField('description', event.target.value)}
+                />
+              </Field>
+              <Button onClick={handleSave}>Degisiklikleri Kaydet</Button>
+            </FieldGroup>
+          ) : (
+            <>
+              <DetailList
+                items={[
+                  { label: 'Urun Kodu', value: currentProduct.id },
+                  { label: 'Stok Kodu', value: currentProduct.sku },
+                  { label: 'Barkod', value: currentProduct.barcode },
+                  { label: 'Kategori', value: currentProduct.category },
+                  { label: 'Marka', value: currentProduct.brand },
+                  {
+                    label: 'Olusturma Tarihi',
+                    value: formatDate(currentProduct.createdAt),
+                  },
+                ]}
+              />
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground">Aciklama</p>
+                <p className="mt-2 whitespace-pre-line text-sm">
+                  {currentProduct.description}
+                </p>
+              </div>
+            </>
+          )}
         </SectionCard>
 
         <SectionCard
@@ -489,11 +681,72 @@ export function ProductDetailPageClient() {
           description="Depo ve satis tarafindaki gorsel durum"
           contentClassName="space-y-3"
         >
+          {isEditing ? (
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="edit-cost">Maliyet</FieldLabel>
+                  <Input
+                    id="edit-cost"
+                    value={form.costPrice}
+                    onChange={(event) => updateField('costPrice', event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="edit-supplier">Tedarikci Fiyati</FieldLabel>
+                  <Input
+                    id="edit-supplier"
+                    value={form.supplierPrice}
+                    onChange={(event) => updateField('supplierPrice', event.target.value)}
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="edit-sale">Satis Fiyati</FieldLabel>
+                  <Input
+                    id="edit-sale"
+                    value={form.salePrice}
+                    onChange={(event) => updateField('salePrice', event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="edit-tax">KDV</FieldLabel>
+                  <Input
+                    id="edit-tax"
+                    value={form.taxRate}
+                    onChange={(event) => updateField('taxRate', event.target.value)}
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="edit-stock">Stok</FieldLabel>
+                  <Input
+                    id="edit-stock"
+                    value={form.stock}
+                    onChange={(event) => updateField('stock', event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="edit-reorder">Yeniden Siparis Noktasi</FieldLabel>
+                  <Input
+                    id="edit-reorder"
+                    value={form.reorderPoint}
+                    onChange={(event) => updateField('reorderPoint', event.target.value)}
+                  />
+                </Field>
+              </div>
+              <Button variant="outline" onClick={handleArchive}>
+                Urunu Arsivle
+              </Button>
+            </>
+          ) : null}
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div>
               <p className="text-sm font-medium">Stok Esigi</p>
               <p className="text-xs text-muted-foreground">
-                Minimum {product.reorderPoint} {product.unit}
+                Minimum {currentProduct.reorderPoint} {currentProduct.unit}
               </p>
             </div>
             <Badge variant={stockMeta.variant}>{stockMeta.label}</Badge>
@@ -514,7 +767,18 @@ export function ProductDetailPageClient() {
                 Urun bazli vergi orani
               </p>
             </div>
-            <span className="text-sm font-medium">%{product.taxRate}</span>
+            <span className="text-sm font-medium">%{currentProduct.taxRate}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">Tedarikci Fiyati</p>
+              <p className="text-xs text-muted-foreground">
+                Son alim baz fiyat
+              </p>
+            </div>
+            <span className="text-sm font-medium">
+              {formatCurrency(currentProduct.supplierPrice)}
+            </span>
           </div>
         </SectionCard>
 
@@ -523,6 +787,23 @@ export function ProductDetailPageClient() {
           description="Bu kartin kullanildigi operasyon alanlari"
           contentClassName="space-y-3"
         >
+          {stockModeOpen ? (
+            <div className="rounded-lg border p-3">
+              <p className="text-sm font-medium">Manuel Stok Duzeltmesi</p>
+              <div className="mt-3 space-y-3">
+                <Input
+                  value={movementQty}
+                  onChange={(event) => setMovementQty(event.target.value)}
+                  placeholder="Pozitif ya da negatif miktar"
+                />
+                <Textarea
+                  value={movementNote}
+                  onChange={(event) => setMovementNote(event.target.value)}
+                />
+                <Button onClick={handleStockAdjustment}>Hareketi Kaydet</Button>
+              </div>
+            </div>
+          ) : null}
           <Link
             href="/teklifler"
             className="flex items-center justify-between rounded-lg border p-3 text-sm font-medium hover:bg-muted/50"

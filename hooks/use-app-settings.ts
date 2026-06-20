@@ -2,9 +2,13 @@ import { useEffect, useState } from 'react'
 
 export type AppSettings = {
   companyName: string
+  companyAddress: string
   taxOffice: string
   taxNumber: string
-  companyEmail: string
+  phone: string
+  email: string
+  website: string
+  logoUrl: string
   lowStockAlerts: boolean
   overdueInvoiceAlerts: boolean
   dailySummaryEmail: boolean
@@ -14,9 +18,13 @@ const STORAGE_KEY = 'erp-lite-app-settings'
 
 const defaultSettings: AppSettings = {
   companyName: 'Adakan Endustriyel Cozumler Ltd. Sti.',
+  companyAddress: 'Ikitelli OSB Mah. Demirciler Cad. No:18 Basaksehir / Istanbul',
   taxOffice: 'Ikitelli',
   taxNumber: '1234567890',
-  companyEmail: 'info@adakan.com.tr',
+  phone: '0212 555 00 55',
+  email: 'info@adakan.com.tr',
+  website: 'www.adakan.com.tr',
+  logoUrl: 'https://dummyimage.com/160x48/e9eef8/1f3b63&text=Adakan+ERP',
   lowStockAlerts: true,
   overdueInvoiceAlerts: true,
   dailySummaryEmail: false,

@@ -301,7 +301,7 @@ export function StockPageClient() {
             movement.id,
             movement.product,
             movement.sku,
-            movement.reference,
+            movement.relatedDoc ?? '',
             movement.warehouse,
           ].join(' '),
         ).includes(normalizedQuery)
@@ -495,10 +495,10 @@ export function StockPageClient() {
                     {formatDate(movement.date)}
                   </TableCell>
                   <TableCell className="font-medium">
-                    {movement.quantity}
+                    {movement.qty}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {movement.reference}
+                    {movement.relatedDoc ?? movement.note}
                   </TableCell>
                   <TableCell className="pr-6 text-right">
                     <Badge variant={meta.variant}>{meta.label}</Badge>

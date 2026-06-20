@@ -1,6 +1,6 @@
 import type { BadgeVariant } from '@/lib/ui-meta'
 
-export type ProductStatus = 'active' | 'passive' | 'draft'
+export type ProductStatus = 'active' | 'passive' | 'draft' | 'archived'
 
 export const productStatusMeta: Record<
   ProductStatus,
@@ -9,6 +9,7 @@ export const productStatusMeta: Record<
   active: { label: 'Aktif', variant: 'success' },
   passive: { label: 'Pasif', variant: 'secondary' },
   draft: { label: 'Taslak', variant: 'warning' },
+  archived: { label: 'Arsiv', variant: 'outline' },
 }
 
 export type Product = {
@@ -20,6 +21,7 @@ export type Product = {
   brand: string
   unit: string
   costPrice: number
+  supplierPrice: number
   salePrice: number
   taxRate: number
   stock: number
@@ -58,6 +60,7 @@ export const products: Product[] = [
     brand: 'Bosch',
     unit: 'Adet',
     costPrice: 2450,
+    supplierPrice: 2385,
     salePrice: 3290,
     taxRate: 20,
     stock: 8,
@@ -76,6 +79,7 @@ export const products: Product[] = [
     brand: 'Makita',
     unit: 'Adet',
     costPrice: 3100,
+    supplierPrice: 3010,
     salePrice: 4150,
     taxRate: 20,
     stock: 15,
@@ -93,6 +97,7 @@ export const products: Product[] = [
     brand: 'Stanley',
     unit: 'Adet',
     costPrice: 185,
+    supplierPrice: 179,
     salePrice: 289,
     taxRate: 20,
     stock: 124,
@@ -110,6 +115,7 @@ export const products: Product[] = [
     brand: 'Karcher',
     unit: 'Adet',
     costPrice: 5400,
+    supplierPrice: 5280,
     salePrice: 7290,
     taxRate: 20,
     stock: 6,
@@ -127,6 +133,7 @@ export const products: Product[] = [
     brand: 'Marshall',
     unit: 'Kova',
     costPrice: 640,
+    supplierPrice: 612,
     salePrice: 920,
     taxRate: 20,
     stock: 3,
@@ -144,6 +151,7 @@ export const products: Product[] = [
     brand: 'DeWalt',
     unit: 'Adet',
     costPrice: 3850,
+    supplierPrice: 3725,
     salePrice: 5190,
     taxRate: 20,
     stock: 0,
@@ -161,6 +169,7 @@ export const products: Product[] = [
     brand: 'Ozkan',
     unit: 'Kutu',
     costPrice: 95,
+    supplierPrice: 92,
     salePrice: 159,
     taxRate: 20,
     stock: 210,
@@ -178,6 +187,7 @@ export const products: Product[] = [
     brand: 'Ozkan',
     unit: 'Adet',
     costPrice: 78,
+    supplierPrice: 74,
     salePrice: 135,
     taxRate: 20,
     stock: 48,
@@ -195,6 +205,7 @@ export const products: Product[] = [
     brand: 'Makita',
     unit: 'Adet',
     costPrice: 2890,
+    supplierPrice: 2805,
     salePrice: 3990,
     taxRate: 20,
     stock: 11,
@@ -212,6 +223,7 @@ export const products: Product[] = [
     brand: 'Bosch',
     unit: 'Set',
     costPrice: 420,
+    supplierPrice: 405,
     salePrice: 649,
     taxRate: 20,
     stock: 67,
@@ -229,6 +241,7 @@ export const products: Product[] = [
     brand: 'Marshall',
     unit: 'Kova',
     costPrice: 1180,
+    supplierPrice: 1142,
     salePrice: 1650,
     taxRate: 20,
     stock: 22,
@@ -246,6 +259,7 @@ export const products: Product[] = [
     brand: 'DeWalt',
     unit: 'Adet',
     costPrice: 310,
+    supplierPrice: 298,
     salePrice: 459,
     taxRate: 20,
     stock: 0,

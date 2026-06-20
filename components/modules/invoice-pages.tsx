@@ -24,6 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+import { useAppSettings } from '@/hooks/use-app-settings'
 import { useErpCollections } from '@/hooks/use-erp-store'
 import { invoiceStatusMeta, invoiceTotals } from '@/lib/data/invoices'
 import { formatCurrency, formatDate, formatNumber } from '@/lib/ui-meta'
@@ -109,7 +110,17 @@ export function InvoicesPageClient() {
                     {formatCurrency(totals.total)}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={meta.variant}>{meta.label}</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={meta.variant}>{meta.label}</Badge>
+                      {invoice.relatedQuotation ? (
+                        <Link
+                          href={`/teklifler/${invoice.relatedQuotation}`}
+                          className="text-xs text-muted-foreground hover:underline"
+                        >
+                          {invoice.relatedQuotation}
+                        </Link>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell className="pr-6 text-right">
                     <Button
@@ -330,6 +341,7 @@ export function NewInvoicePageClient() {
 export function InvoiceDetailPageClient() {
   const params = useParams<{ id: string }>()
   const { getInvoiceById, hydrated } = useErpCollections()
+  const { settings } = useAppSettings()
   const invoice = getInvoiceById(params.id)
 
   if (hydrated && !invoice) {
@@ -352,11 +364,36 @@ export function InvoiceDetailPageClient() {
 
   return (
     <>
+      <div className="print-document print-only rounded-lg border p-6">
+        <div className="flex items-start justify-between gap-6">
+          <div>
+            <p className="text-lg font-semibold">{settings.companyName}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {settings.companyAddress}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {settings.taxOffice} / {settings.taxNumber}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {settings.phone} - {settings.email}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-lg font-semibold">{invoice.id}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Musteri: {invoice.customer}
+            </p>
+          </div>
+        </div>
+      </div>
       <PageHeader
         title={invoice.id}
         description={`${invoice.customer} icin duzenlenen faturanin detay ekrani.`}
       >
         <Button variant="outline" render={<Link href="/faturalar">Listeye Don</Link>} />
+        <Button variant="outline" onClick={() => window.print()}>
+          Yazdir / PDF
+        </Button>
         <Button render={<Link href="/faturalar/yeni">Yeni Belge</Link>} />
       </PageHeader>
 
@@ -386,6 +423,19 @@ export function InvoiceDetailPageClient() {
               { label: 'Musteri', value: invoice.customer },
               { label: 'Duzenleme Tarihi', value: formatDate(invoice.issueDate) },
               { label: 'Vade Tarihi', value: formatDate(invoice.dueDate) },
+              {
+                label: 'Kaynak Teklif',
+                value: invoice.relatedQuotation ? (
+                  <Link
+                    href={`/teklifler/${invoice.relatedQuotation}`}
+                    className="hover:underline"
+                  >
+                    {invoice.relatedQuotation}
+                  </Link>
+                ) : (
+                  'Bagimsiz belge'
+                ),
+              },
             ]}
           />
           <div className="rounded-lg border p-4">

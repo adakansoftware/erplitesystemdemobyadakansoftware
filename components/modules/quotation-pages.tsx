@@ -24,6 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+import { useAppSettings } from '@/hooks/use-app-settings'
 import { useErpCollections } from '@/hooks/use-erp-store'
 import {
   lineTotal,
@@ -338,7 +339,9 @@ export function NewQuotationPageClient() {
 
 export function QuotationDetailPageClient() {
   const params = useParams<{ id: string }>()
-  const { getQuotationById, hydrated } = useErpCollections()
+  const router = useRouter()
+  const { settings } = useAppSettings()
+  const { convertQuotationToInvoice, getQuotationById, hydrated } = useErpCollections()
   const quotation = getQuotationById(params.id)
 
   if (hydrated && !quotation) {
@@ -356,29 +359,68 @@ export function QuotationDetailPageClient() {
     return null
   }
 
-  const meta = quotationStatusMeta[quotation.status]
-  const totals = quotationTotals(quotation.lines)
+  const currentQuotation = quotation
+  const meta = quotationStatusMeta[currentQuotation.status]
+  const totals = quotationTotals(currentQuotation.lines)
+
+  function handleConvert() {
+    const nextInvoice = convertQuotationToInvoice(currentQuotation.id)
+
+    if (!nextInvoice) {
+      toast.error('Teklif faturaya donusturulemedi')
+      return
+    }
+
+    toast.success('Teklif faturaya donusturuldu')
+    router.push(`/faturalar/${nextInvoice.id}`)
+  }
 
   return (
     <>
+      <div className="print-document print-only rounded-lg border p-6">
+        <div className="flex items-start justify-between gap-6">
+          <div>
+            <p className="text-lg font-semibold">{settings.companyName}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {settings.companyAddress}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {settings.taxOffice} / {settings.taxNumber}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {settings.phone} - {settings.email}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-lg font-semibold">{currentQuotation.id}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Musteri: {currentQuotation.customer}
+            </p>
+          </div>
+        </div>
+      </div>
       <PageHeader
-        title={quotation.id}
-        description={`${quotation.customer} icin hazirlanan teklifin detay gorunumu.`}
+        title={currentQuotation.id}
+        description={`${currentQuotation.customer} icin hazirlanan teklifin detay gorunumu.`}
       >
         <Button variant="outline" render={<Link href="/teklifler">Listeye Don</Link>} />
+        <Button variant="outline" onClick={() => window.print()}>
+          Yazdir / PDF
+        </Button>
+        <Button onClick={handleConvert}>Faturaya Cevir</Button>
         <Button render={<Link href="/teklifler/yeni">Yeni Teklif</Link>} />
       </PageHeader>
 
       <MetricGrid
         items={[
-          { label: 'Musteri', value: quotation.customer },
+          { label: 'Musteri', value: currentQuotation.customer },
           {
             label: 'Durum',
             value: meta.label,
             badge: 'Teklif',
             badgeVariant: meta.variant,
           },
-          { label: 'Gecerlilik', value: formatDate(quotation.validUntil) },
+          { label: 'Gecerlilik', value: formatDate(currentQuotation.validUntil) },
           { label: 'Toplam', value: formatCurrency(totals.total) },
         ]}
       />
@@ -391,16 +433,29 @@ export function QuotationDetailPageClient() {
         >
           <DetailList
             items={[
-              { label: 'Teklif No', value: quotation.id },
-              { label: 'Musteri', value: quotation.customer },
-              { label: 'Teklif Tarihi', value: formatDate(quotation.date) },
-              { label: 'Gecerlilik', value: formatDate(quotation.validUntil) },
+              { label: 'Teklif No', value: currentQuotation.id },
+              { label: 'Musteri', value: currentQuotation.customer },
+              { label: 'Teklif Tarihi', value: formatDate(currentQuotation.date) },
+              { label: 'Gecerlilik', value: formatDate(currentQuotation.validUntil) },
+              {
+                label: 'Bagli Fatura',
+                value: currentQuotation.relatedInvoice ? (
+                  <Link
+                    href={`/faturalar/${currentQuotation.relatedInvoice}`}
+                    className="hover:underline"
+                  >
+                    {currentQuotation.relatedInvoice}
+                  </Link>
+                ) : (
+                  'Henuz olusturulmadi'
+                ),
+              },
             ]}
           />
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground">Not</p>
             <p className="mt-2 whitespace-pre-line text-sm">
-              {quotation.note || 'Not girilmedi.'}
+              {currentQuotation.note || 'Not girilmedi.'}
             </p>
           </div>
         </SectionCard>
@@ -410,9 +465,9 @@ export function QuotationDetailPageClient() {
           description="Teklif satirlari"
           contentClassName="space-y-3 xl:col-span-2"
         >
-          {quotation.lines.map((line) => (
+          {currentQuotation.lines.map((line) => (
             <div
-              key={`${quotation.id}-${line.product}`}
+              key={`${currentQuotation.id}-${line.product}`}
               className="rounded-lg border p-4"
             >
               <div className="flex items-start justify-between gap-3">

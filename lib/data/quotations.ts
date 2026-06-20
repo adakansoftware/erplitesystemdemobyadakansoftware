@@ -33,6 +33,7 @@ export type Quotation = {
   status: QuotationStatus
   lines: QuotationLine[]
   note: string
+  relatedInvoice?: string
 }
 
 export function lineTotal(line: QuotationLine) {

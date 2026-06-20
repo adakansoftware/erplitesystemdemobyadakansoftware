@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Building2, Wallet } from 'lucide-react'
 import { useAppSettings, type AppSettings } from '@/hooks/use-app-settings'
+import { useErpCollections } from '@/hooks/use-erp-store'
 import { PageHeader } from '@/components/shared/page-header'
 import { MetricGrid, SectionCard } from '@/components/shared/module-primitives'
 import { SearchInput } from '@/components/shared/search-input'
@@ -24,10 +25,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   accountStatements,
   balanceMeta,
-  currentAccounts,
   defaultStatement,
 } from '@/lib/data/accounts'
-import { deals, dealStageMeta, leads, leadStatusMeta, tasks, taskPriorityMeta } from '@/lib/data/crm'
+import { deals, dealStageMeta, leads, leadStatusMeta, taskPriorityMeta } from '@/lib/data/crm'
 import {
   financeAccounts,
   transactionMeta,
@@ -41,14 +41,49 @@ function readHash() {
 }
 
 export function CurrentAccountsPageClient() {
+  const {
+    createCurrentAccount,
+    currentAccounts,
+    deleteCurrentAccount,
+    getStatementByAccountId,
+    updateCurrentAccount,
+  } = useErpCollections()
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<'all' | 'customer' | 'supplier'>('all')
   const [selectedId, setSelectedId] = useState('CARI-001')
+  const [isFormOpen, setIsFormOpen] = useState(false)
+  const [form, setForm] = useState({
+    name: '',
+    type: 'customer',
+    taxNumber: '',
+    city: '',
+    phone: '',
+    email: '',
+    creditLimit: '0',
+    balance: '0',
+  })
 
   useEffect(() => {
     const hash = readHash()
     if (hash) setSelectedId(hash)
   }, [])
+
+  useEffect(() => {
+    if (!selectedAccount) {
+      return
+    }
+
+    setForm({
+      name: selectedAccount.name,
+      type: selectedAccount.type,
+      taxNumber: selectedAccount.taxNumber,
+      city: selectedAccount.city,
+      phone: selectedAccount.phone,
+      email: selectedAccount.email,
+      creditLimit: String(selectedAccount.creditLimit),
+      balance: String(selectedAccount.balance),
+    })
+  }, [selectedId])
 
   const filteredAccounts = useMemo(
     () =>
@@ -70,7 +105,8 @@ export function CurrentAccountsPageClient() {
     filteredAccounts[0] ??
     currentAccounts[0]
   const previewStatement =
-    accountStatements[selectedAccount?.id] ?? defaultStatement
+    (selectedAccount ? getStatementByAccountId(selectedAccount.id) : defaultStatement) ??
+    defaultStatement
 
   const receivable = currentAccounts
     .filter((item) => item.balance > 0)
@@ -79,11 +115,66 @@ export function CurrentAccountsPageClient() {
     .filter((item) => item.balance < 0)
     .reduce((sum, item) => sum + Math.abs(item.balance), 0)
 
+  function updateField<K extends keyof typeof form>(key: K, value: string) {
+    setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  function handleCreate() {
+    const nextAccount = createCurrentAccount({
+      name: form.name,
+      type: form.type as 'customer' | 'supplier',
+      taxNumber: form.taxNumber,
+      city: form.city,
+      phone: form.phone,
+      email: form.email,
+      creditLimit: Number(form.creditLimit || 0),
+      balance: Number(form.balance || 0),
+    })
+
+    toast.success('Cari hesap olusturuldu')
+    setSelectedId(nextAccount.id)
+    setIsFormOpen(false)
+  }
+
+  function handleUpdate() {
+    if (!selectedAccount) {
+      return
+    }
+
+    updateCurrentAccount(selectedAccount.id, {
+      name: form.name,
+      type: form.type as 'customer' | 'supplier',
+      taxNumber: form.taxNumber,
+      city: form.city,
+      phone: form.phone,
+      email: form.email,
+      creditLimit: Number(form.creditLimit || 0),
+      balance: Number(form.balance || 0),
+    })
+
+    toast.success('Cari hesap guncellendi')
+  }
+
+  function handleDelete() {
+    if (!selectedAccount) {
+      return
+    }
+
+    deleteCurrentAccount(selectedAccount.id)
+    toast.success('Cari hesap silindi')
+    setSelectedId(currentAccounts[0]?.id ?? '')
+  }
+
   return (
     <>
       <PageHeader
         title="Cari Hesaplar"
         description="Musteri ve tedarikci bakiyeleri ile hesap hareketleri."
+        actions={
+          <Button onClick={() => setIsFormOpen((current) => !current)}>
+            Yeni Cari Ekle
+          </Button>
+        }
       />
 
       <MetricGrid
@@ -198,6 +289,60 @@ export function CurrentAccountsPageClient() {
           description="Secili cari icin son hesap hareketleri"
           contentClassName="space-y-3"
         >
+          <div className="grid gap-3">
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="account-name">Cari Adi</FieldLabel>
+                <Input
+                  id="account-name"
+                  value={form.name}
+                  onChange={(event) => updateField('name', event.target.value)}
+                />
+              </Field>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Input
+                  value={form.type}
+                  onChange={(event) => updateField('type', event.target.value)}
+                />
+                <Input
+                  value={form.taxNumber}
+                  onChange={(event) => updateField('taxNumber', event.target.value)}
+                />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Input
+                  value={form.city}
+                  onChange={(event) => updateField('city', event.target.value)}
+                />
+                <Input
+                  value={form.phone}
+                  onChange={(event) => updateField('phone', event.target.value)}
+                />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Input
+                  value={form.email}
+                  onChange={(event) => updateField('email', event.target.value)}
+                />
+                <Input
+                  value={form.creditLimit}
+                  onChange={(event) =>
+                    updateField('creditLimit', event.target.value)
+                  }
+                />
+              </div>
+            </FieldGroup>
+            <div className="flex gap-2">
+              <Button onClick={isFormOpen ? handleCreate : handleUpdate}>
+                {isFormOpen ? 'Cariyi Kaydet' : 'Degisiklikleri Kaydet'}
+              </Button>
+              {!isFormOpen ? (
+                <Button variant="outline" onClick={handleDelete}>
+                  Sil
+                </Button>
+              ) : null}
+            </div>
+          </div>
           {previewStatement.map((row) => (
             <div key={row.id} className="rounded-lg border p-3 text-sm">
               <div className="flex items-center justify-between gap-3">
@@ -634,8 +779,17 @@ export function DealsPageClient() {
 }
 
 export function TasksPageClient() {
+  const { createTask, deleteTask, tasks, toggleTask } = useErpCollections()
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<'all' | 'open' | 'done'>('all')
+  const [isCreating, setIsCreating] = useState(false)
+  const [form, setForm] = useState({
+    title: '',
+    related: '',
+    due: '',
+    priority: 'medium',
+    owner: '',
+  })
 
   const filteredTasks = useMemo(
     () =>
@@ -658,6 +812,11 @@ export function TasksPageClient() {
       <PageHeader
         title="Gorevler"
         description="Takip, satis ve operasyon gorevlerini ekip bazinda yonetin."
+        actions={
+          <Button onClick={() => setIsCreating((current) => !current)}>
+            Yeni Gorev
+          </Button>
+        }
       />
 
       <MetricGrid
@@ -696,6 +855,71 @@ export function TasksPageClient() {
           />
         }
       >
+        {isCreating ? (
+          <div className="space-y-3 border-b px-6 pb-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <Input
+                value={form.title}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, title: event.target.value }))
+                }
+                placeholder="Gorev basligi"
+              />
+              <Input
+                value={form.related}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, related: event.target.value }))
+                }
+                placeholder="Ilgili musteri / konu"
+              />
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <Input
+                value={form.due}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, due: event.target.value }))
+                }
+                placeholder="2024-04-25"
+              />
+              <Input
+                value={form.priority}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, priority: event.target.value }))
+                }
+                placeholder="high / medium / low"
+              />
+              <Input
+                value={form.owner}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, owner: event.target.value }))
+                }
+                placeholder="Sorumlu"
+              />
+            </div>
+            <Button
+              onClick={() => {
+                createTask({
+                  title: form.title,
+                  related: form.related,
+                  due: form.due,
+                  priority: form.priority as 'high' | 'medium' | 'low',
+                  owner: form.owner,
+                })
+                toast.success('Gorev olusturuldu')
+                setForm({
+                  title: '',
+                  related: '',
+                  due: '',
+                  priority: 'medium',
+                  owner: '',
+                })
+                setIsCreating(false)
+              }}
+            >
+              Gorevi Kaydet
+            </Button>
+          </div>
+        ) : null}
         <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
           <TabsList>
             <TabsTrigger value="all">Tumu</TabsTrigger>
@@ -725,9 +949,31 @@ export function TasksPageClient() {
                     </div>
                     <div className="flex items-center justify-between rounded-lg border p-3">
                       <Badge variant={meta.variant}>{meta.label}</Badge>
-                      <Badge variant={task.done ? 'success' : 'secondary'}>
-                        {task.done ? 'Tamamlandi' : 'Acik'}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            toggleTask(task.id)
+                            toast.success('Gorev durumu guncellendi')
+                          }}
+                        >
+                          {task.done ? 'Geri Ac' : 'Tamamla'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            deleteTask(task.id)
+                            toast.success('Gorev silindi')
+                          }}
+                        >
+                          Sil
+                        </Button>
+                        <Badge variant={task.done ? 'success' : 'secondary'}>
+                          {task.done ? 'Tamamlandi' : 'Acik'}
+                        </Badge>
+                      </div>
                     </div>
                   </SectionCard>
                 )
@@ -765,63 +1011,93 @@ export function SettingsPageClient() {
         actions={<Button onClick={handleSave}>Degisiklikleri Kaydet</Button>}
       />
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <SectionCard
-          title="Sirket Bilgileri"
-          description="Baslikta ve belgelerde kullanilan alanlar"
-          contentClassName="space-y-4 xl:col-span-2"
-        >
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="company-name">Firma Unvani</FieldLabel>
-              <Input
-                id="company-name"
-                value={form.companyName}
-                onChange={(event) =>
-                  updateField('companyName', event.target.value)
-                }
-              />
-            </Field>
-            <div className="grid gap-4 md:grid-cols-2">
+      <Tabs defaultValue="company">
+        <TabsList>
+          <TabsTrigger value="company">Firma Bilgileri</TabsTrigger>
+          <TabsTrigger value="notifications">Bildirimler</TabsTrigger>
+        </TabsList>
+        <TabsContent value="company">
+          <SectionCard
+            title="Sirket Bilgileri"
+            description="Baslikta ve belgelerde kullanilan alanlar"
+            contentClassName="space-y-4"
+          >
+            <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="company-tax-office">Vergi Dairesi</FieldLabel>
+                <FieldLabel htmlFor="company-name">Firma Unvani</FieldLabel>
                 <Input
-                  id="company-tax-office"
-                  value={form.taxOffice}
+                  id="company-name"
+                  value={form.companyName}
                   onChange={(event) =>
-                    updateField('taxOffice', event.target.value)
+                    updateField('companyName', event.target.value)
                   }
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="company-tax-number">Vergi No</FieldLabel>
+                <FieldLabel htmlFor="company-address">Adres</FieldLabel>
                 <Input
-                  id="company-tax-number"
-                  value={form.taxNumber}
+                  id="company-address"
+                  value={form.companyAddress}
                   onChange={(event) =>
-                    updateField('taxNumber', event.target.value)
+                    updateField('companyAddress', event.target.value)
                   }
                 />
               </Field>
-            </div>
-            <Field>
-              <FieldLabel htmlFor="company-mail">E-posta</FieldLabel>
-              <Input
-                id="company-mail"
-                value={form.companyEmail}
-                onChange={(event) =>
-                  updateField('companyEmail', event.target.value)
-                }
-              />
-            </Field>
-          </FieldGroup>
-        </SectionCard>
-
-        <SectionCard
-          title="Bildirimler"
-          description="Arayuz uyarilari"
-          contentClassName="space-y-4"
-        >
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="company-tax-office">Vergi Dairesi</FieldLabel>
+                  <Input
+                    id="company-tax-office"
+                    value={form.taxOffice}
+                    onChange={(event) =>
+                      updateField('taxOffice', event.target.value)
+                    }
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="company-tax-number">Vergi No</FieldLabel>
+                  <Input
+                    id="company-tax-number"
+                    value={form.taxNumber}
+                    onChange={(event) =>
+                      updateField('taxNumber', event.target.value)
+                    }
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Input
+                  value={form.phone}
+                  onChange={(event) => updateField('phone', event.target.value)}
+                  placeholder="Telefon"
+                />
+                <Input
+                  value={form.email}
+                  onChange={(event) => updateField('email', event.target.value)}
+                  placeholder="E-posta"
+                />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Input
+                  value={form.website}
+                  onChange={(event) => updateField('website', event.target.value)}
+                  placeholder="Web sitesi"
+                />
+                <Input
+                  value={form.logoUrl}
+                  onChange={(event) => updateField('logoUrl', event.target.value)}
+                  placeholder="Logo URL"
+                />
+              </div>
+            </FieldGroup>
+          </SectionCard>
+        </TabsContent>
+        <TabsContent value="notifications">
+          <SectionCard
+            title="Bildirimler"
+            description="Arayuz uyarilari"
+            contentClassName="space-y-4"
+          >
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div>
               <p className="text-sm font-medium">Dusuk stok uyarilari</p>
@@ -864,8 +1140,9 @@ export function SettingsPageClient() {
               }
             />
           </div>
-        </SectionCard>
-      </div>
+          </SectionCard>
+        </TabsContent>
+      </Tabs>
     </>
   )
 }

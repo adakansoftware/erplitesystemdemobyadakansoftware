@@ -28,6 +28,7 @@ export type Invoice = {
   status: InvoiceStatus
   lines: InvoiceLine[]
   note: string
+  relatedQuotation?: string
 }
 
 export function invoiceTotals(lines: InvoiceLine[]) {

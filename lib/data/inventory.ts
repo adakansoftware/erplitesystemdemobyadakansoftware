@@ -68,103 +68,130 @@ export const movementMeta: Record<
 
 export type StockMovement = {
   id: string
+  productId: string
+  warehouseId: string
   date: string
+  qty: number
+  note: string
+  relatedDoc?: string
   product: string
   sku: string
   type: MovementType
-  quantity: number
   warehouse: string
-  reference: string
   user: string
 }
 
 export const stockMovements: StockMovement[] = [
   {
     id: 'MOV-2048',
+    productId: 'PRD-1002',
+    warehouseId: 'WH-01',
     date: '2024-04-18',
+    qty: 20,
+    note: 'Tedarik alim girisi',
+    relatedDoc: 'ALIS-2024-0091',
     product: 'Makita HR2470 Kirici Delici',
     sku: 'MKT-HR2470',
     type: 'in',
-    quantity: 20,
     warehouse: 'Merkez Depo',
-    reference: 'ALIS-2024-0091',
     user: 'Ahmet Yilmaz',
   },
   {
     id: 'MOV-2047',
+    productId: 'PRD-1001',
+    warehouseId: 'WH-03',
     date: '2024-04-18',
+    qty: 4,
+    note: 'Fatura sevkiyati',
+    relatedDoc: 'FT-2024-0148',
     product: 'Bosch GSR 12V-15 Akulu Vidalama',
     sku: 'BSH-GSR-12V',
     type: 'out',
-    quantity: 4,
     warehouse: 'Magaza Stok',
-    reference: 'FT-2024-0148',
     user: 'Burak Demir',
   },
   {
     id: 'MOV-2046',
+    productId: 'PRD-1003',
+    warehouseId: 'WH-01',
     date: '2024-04-17',
+    qty: 30,
+    note: 'Subeler arasi transfer',
+    relatedDoc: 'TRF-2024-0033',
     product: 'Stanley FatMax Serit Metre 8m',
     sku: 'STN-FM-8M',
     type: 'transfer',
-    quantity: 30,
     warehouse: 'Merkez Depo -> Anadolu Yakasi',
-    reference: 'TRF-2024-0033',
     user: 'Selin Kaya',
   },
   {
     id: 'MOV-2045',
+    productId: 'PRD-1005',
+    warehouseId: 'WH-01',
     date: '2024-04-17',
+    qty: 12,
+    note: 'Fatura sevkiyati',
+    relatedDoc: 'FT-2024-0147',
     product: 'Marshall Maxi Plus Ic Cephe Boyasi 15L',
     sku: 'MRS-MX-15L',
     type: 'out',
-    quantity: 12,
     warehouse: 'Merkez Depo',
-    reference: 'FT-2024-0147',
     user: 'Ahmet Yilmaz',
   },
   {
     id: 'MOV-2044',
+    productId: 'PRD-1006',
+    warehouseId: 'WH-01',
     date: '2024-04-16',
+    qty: 6,
+    note: 'Fatura sevkiyati',
+    relatedDoc: 'FT-2024-0145',
     product: 'DeWalt DCD709 Akulu Darbeli Matkap',
     sku: 'DWT-DCD709',
     type: 'out',
-    quantity: 6,
     warehouse: 'Merkez Depo',
-    reference: 'FT-2024-0145',
     user: 'Burak Demir',
   },
   {
     id: 'MOV-2043',
+    productId: 'PRD-1007',
+    warehouseId: 'WH-01',
     date: '2024-04-16',
+    qty: 150,
+    note: 'Tedarik alim girisi',
+    relatedDoc: 'ALIS-2024-0090',
     product: 'Ozkan Galvaniz Vida Seti 500 Parca',
     sku: 'OZK-VS-500',
     type: 'in',
-    quantity: 150,
     warehouse: 'Merkez Depo',
-    reference: 'ALIS-2024-0090',
     user: 'Ahmet Yilmaz',
   },
   {
     id: 'MOV-2042',
+    productId: 'PRD-1005',
+    warehouseId: 'WH-01',
     date: '2024-04-15',
+    qty: -2,
+    note: 'Sayim duzeltmesi',
+    relatedDoc: 'SAYIM-2024-04',
     product: 'Marshall Maxi Plus Ic Cephe Boyasi 15L',
     sku: 'MRS-MX-15L',
     type: 'adjustment',
-    quantity: -2,
     warehouse: 'Merkez Depo',
-    reference: 'SAYIM-2024-04',
     user: 'Selin Kaya',
   },
   {
     id: 'MOV-2041',
+    productId: 'PRD-1004',
+    warehouseId: 'WH-03',
     date: '2024-04-15',
+    qty: 2,
+    note: 'Fatura sevkiyati',
+    relatedDoc: 'FT-2024-0142',
     product: 'Karcher K5 Premium Yuksek Basincli Yikama',
     sku: 'KRC-K5-PRM',
     type: 'out',
-    quantity: 2,
     warehouse: 'Magaza Stok',
-    reference: 'FT-2024-0142',
     user: 'Burak Demir',
   },
 ]

@@ -33,24 +33,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Separator } from '@/components/ui/separator'
 import { SidebarTrigger } from '@/components/ui/sidebar'
-
-const notifications = [
-  {
-    title: 'Dusuk stok uyarisi',
-    description: 'Bosch Akulu Vidalama kritik seviyenin altinda',
-    time: '12 dk',
-  },
-  {
-    title: 'Fatura odendi',
-    description: 'FT-2024-0148 numarali fatura tahsil edildi',
-    time: '1 saat',
-  },
-  {
-    title: 'Yeni teklif onaylandi',
-    description: 'Yildiz Insaat teklifi kabul edildi',
-    time: '3 saat',
-  },
-] as const
+import { useAuth } from '@/hooks/use-auth'
+import { useNotifications } from '@/hooks/use-notifications'
 
 const quickCreateItems = [
   { label: 'Yeni Urun', icon: Package, href: '/urunler/yeni' },
@@ -59,17 +43,13 @@ const quickCreateItems = [
   { label: 'Yeni Lead', icon: UserPlus, href: '/leads' },
 ] as const
 
-const currentUser = {
-  name: 'Mehmet Adakan',
-  email: 'mehmet@adakan.com.tr',
-  initials: 'MA',
-}
-
 export function Topbar() {
   const { resolvedTheme, setTheme } = useTheme()
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const { currentUser, logout } = useAuth()
+  const notifications = useNotifications()
   const [searchValue, setSearchValue] = useState('')
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
 
@@ -100,6 +80,11 @@ export function Topbar() {
 
     event.preventDefault()
     submitSearch()
+  }
+
+  function handleLogout() {
+    logout()
+    router.replace('/login')
   }
 
   return (
@@ -158,13 +143,14 @@ export function Topbar() {
               <DropdownMenuGroup>
                 <DropdownMenuLabel className="flex items-center justify-between">
                   Bildirimler
-                  <Badge variant="info">3 yeni</Badge>
+                  <Badge variant="info">{notifications.length} yeni</Badge>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {notifications.map((notification) => (
+                {notifications.length ? notifications.map((notification) => (
                   <DropdownMenuItem
-                    key={notification.title}
+                    key={notification.id}
                     className="flex flex-col items-start gap-0.5 py-2"
+                    onClick={() => router.push(notification.href)}
                   >
                     <span className="text-sm font-medium">
                       {notification.title}
@@ -176,7 +162,11 @@ export function Topbar() {
                       {notification.time} once
                     </span>
                   </DropdownMenuItem>
-                ))}
+                )) : (
+                  <DropdownMenuItem className="py-3 text-sm text-muted-foreground">
+                    Bekleyen bildirim yok.
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -216,13 +206,13 @@ export function Topbar() {
                   variant="ghost"
                   className="h-9 gap-2 rounded-lg px-1.5 sm:pr-2.5"
                 >
-                  <Avatar className="size-7">
-                    <AvatarFallback className="bg-primary/12 text-xs font-semibold text-primary">
-                      {currentUser.initials}
+                    <Avatar className="size-7">
+                      <AvatarFallback className="bg-primary/12 text-xs font-semibold text-primary">
+                      {currentUser?.initials ?? 'AD'}
                     </AvatarFallback>
                   </Avatar>
                   <span className="text-sm font-medium max-sm:hidden">
-                    {currentUser.name}
+                    {currentUser?.name ?? 'Demo Kullanici'}
                   </span>
                 </Button>
               }
@@ -230,9 +220,9 @@ export function Topbar() {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuGroup>
                 <DropdownMenuLabel className="flex flex-col">
-                  <span>{currentUser.name}</span>
+                  <span>{currentUser?.name ?? 'Demo Kullanici'}</span>
                   <span className="text-xs font-normal text-muted-foreground">
-                    {currentUser.email}
+                    {currentUser?.email ?? 'admin@demo.com'}
                   </span>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
@@ -246,7 +236,7 @@ export function Topbar() {
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive">
+              <DropdownMenuItem variant="destructive" onClick={handleLogout}>
                 <LogOut />
                 Cikis Yap
               </DropdownMenuItem>
