@@ -40,7 +40,6 @@ const quickCreateItems = [
   { label: 'Yeni Urun', icon: Package, href: '/urunler/yeni' },
   { label: 'Yeni Teklif', icon: FileText, href: '/teklifler/yeni' },
   { label: 'Yeni Fatura', icon: Receipt, href: '/faturalar/yeni' },
-  { label: 'Yeni Lead', icon: UserPlus, href: '/leads' },
 ] as const
 
 export function Topbar() {

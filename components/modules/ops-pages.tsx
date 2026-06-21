@@ -63,6 +63,26 @@ export function CurrentAccountsPageClient() {
     if (hash) setSelectedId(hash)
   }, [])
 
+  const filteredAccounts = useMemo(
+    () =>
+      currentAccounts.filter((account) => {
+        const matchesTab = tab === 'all' || account.type === tab
+        const haystack =
+          `${account.name} ${account.taxNumber} ${account.city} ${account.email}`.toLocaleLowerCase(
+            'tr-TR',
+          )
+        return (
+          matchesTab && haystack.includes(query.toLocaleLowerCase('tr-TR'))
+        )
+      }),
+    [currentAccounts, query, tab],
+  )
+
+  const selectedAccount =
+    currentAccounts.find((account) => account.id === selectedId) ??
+    filteredAccounts[0] ??
+    currentAccounts[0]
+
   useEffect(() => {
     if (!selectedAccount) {
       return
@@ -78,27 +98,7 @@ export function CurrentAccountsPageClient() {
       creditLimit: String(selectedAccount.creditLimit),
       balance: String(selectedAccount.balance),
     })
-  }, [selectedId])
-
-  const filteredAccounts = useMemo(
-    () =>
-      currentAccounts.filter((account) => {
-        const matchesTab = tab === 'all' || account.type === tab
-        const haystack =
-          `${account.name} ${account.taxNumber} ${account.city} ${account.email}`.toLocaleLowerCase(
-            'tr-TR',
-          )
-        return (
-          matchesTab && haystack.includes(query.toLocaleLowerCase('tr-TR'))
-        )
-      }),
-    [query, tab],
-  )
-
-  const selectedAccount =
-    currentAccounts.find((account) => account.id === selectedId) ??
-    filteredAccounts[0] ??
-    currentAccounts[0]
+  }, [selectedAccount])
   const previewStatement =
     (selectedAccount ? getStatementByAccountId(selectedAccount.id) : defaultStatement) ??
     defaultStatement

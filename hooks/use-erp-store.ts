@@ -385,11 +385,22 @@ function mapWarehouse(item: any): Warehouse {
   }
 }
 
-async function requestOrFallback<T>(promise: Promise<T>, fallback: T) {
+type CollectionResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; message: string }
+
+async function requestCollection<T>(
+  label: string,
+  promise: Promise<T>,
+): Promise<CollectionResult<T>> {
   try {
-    return await promise
-  } catch {
-    return fallback
+    return { ok: true, data: await promise }
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error ? `${label}: ${error.message}` : `${label}: Veri alinamadi`,
+    }
   }
 }
 
@@ -415,43 +426,72 @@ async function refreshStore() {
       rawTransactions,
       rawWarehouses,
     ] = await Promise.all([
-      requestOrFallback(api.get<any[]>('/products'), []),
-      requestOrFallback(api.get<any[]>('/invoices'), []),
-      requestOrFallback(api.get<any[]>('/quotations'), []),
-      requestOrFallback(api.get<any[]>('/purchase-orders'), []),
-      requestOrFallback(api.get<any[]>('/current-accounts'), []),
-      requestOrFallback(api.get<any[]>('/crm/tasks'), []),
-      requestOrFallback(api.get<any[]>('/stock/movements'), []),
-      requestOrFallback(api.get<any[]>('/crm/leads'), []),
-      requestOrFallback(api.get<any[]>('/crm/deals'), []),
-      requestOrFallback(api.get<any[]>('/crm/companies'), []),
-      requestOrFallback(api.get<any[]>('/crm/contacts'), []),
-      requestOrFallback(api.get<any[]>('/finance/accounts'), []),
-      requestOrFallback(api.get<any[]>('/finance/transactions'), []),
-      requestOrFallback(api.get<any[]>('/stock/warehouses'), []),
+      requestCollection('Urunler', api.get<any[]>('/products')),
+      requestCollection('Faturalar', api.get<any[]>('/invoices')),
+      requestCollection('Teklifler', api.get<any[]>('/quotations')),
+      requestCollection('Satin alma', api.get<any[]>('/purchase-orders')),
+      requestCollection('Cari hesaplar', api.get<any[]>('/current-accounts')),
+      requestCollection('Gorevler', api.get<any[]>('/crm/tasks')),
+      requestCollection('Stok hareketleri', api.get<any[]>('/stock/movements')),
+      requestCollection('Leads', api.get<any[]>('/crm/leads')),
+      requestCollection('Anlasmalar', api.get<any[]>('/crm/deals')),
+      requestCollection('Firmalar', api.get<any[]>('/crm/companies')),
+      requestCollection('Kontaklar', api.get<any[]>('/crm/contacts')),
+      requestCollection('Kasa banka hesaplari', api.get<any[]>('/finance/accounts')),
+      requestCollection('Finans hareketleri', api.get<any[]>('/finance/transactions')),
+      requestCollection('Depolar', api.get<any[]>('/stock/warehouses')),
     ])
 
-    const currentAccounts = rawCurrentAccounts.length
-      ? rawCurrentAccounts.map(mapCurrentAccount)
-      : initialCurrentAccounts
+    const collectionErrors = [
+      rawProducts,
+      rawInvoices,
+      rawQuotations,
+      rawPurchases,
+      rawCurrentAccounts,
+      rawTasks,
+      rawMovements,
+      rawLeads,
+      rawDeals,
+      rawCompanies,
+      rawContacts,
+      rawFinanceAccounts,
+      rawTransactions,
+      rawWarehouses,
+    ]
+      .filter((result) => !result.ok)
+      .map((result) => result.message)
+
+    const currentAccounts = rawCurrentAccounts.ok
+      ? rawCurrentAccounts.data.map(mapCurrentAccount)
+      : storeState.currentAccounts
     const currentAccountMap = new Map(currentAccounts.map((account) => [account.id, account.name]))
 
-    const financeAccounts = rawFinanceAccounts.length
-      ? rawFinanceAccounts.map(mapFinanceAccount)
-      : initialFinanceAccounts
+    const financeAccounts = rawFinanceAccounts.ok
+      ? rawFinanceAccounts.data.map(mapFinanceAccount)
+      : storeState.financeAccounts
 
-    const warehouses = rawWarehouses.length
-      ? rawWarehouses.map(mapWarehouse)
-      : initialWarehouses
+    const warehouses = rawWarehouses.ok
+      ? rawWarehouses.data.map(mapWarehouse)
+      : storeState.warehouses
 
     const warehouseMap = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse]))
-    const products = rawProducts.length ? rawProducts.map(mapProduct) : initialProducts
-    const transactions = rawTransactions.length
-      ? rawTransactions.map(mapTransaction)
-      : initialTransactions
-    const productsById = new Map(products.map((product) => [product.id, product]))
+    const products = rawProducts.ok ? rawProducts.data.map(mapProduct) : storeState.products
+    const transactions = rawTransactions.ok
+      ? rawTransactions.data.map(mapTransaction)
+      : storeState.transactions
 
-    const deals = (rawDeals.length ? rawDeals : initialDeals).map((item: any) => ({
+    const companyRows = rawCompanies.ok ? rawCompanies.data : []
+    const contactRows = rawContacts.ok ? rawContacts.data : []
+    const dealRows = rawDeals.ok ? rawDeals.data : []
+    const leadRows = rawLeads.ok ? rawLeads.data : []
+    const movementRows = rawMovements.ok ? rawMovements.data : []
+    const purchaseRows = rawPurchases.ok ? rawPurchases.data : []
+    const invoiceRows = rawInvoices.ok ? rawInvoices.data : []
+    const quotationRows = rawQuotations.ok ? rawQuotations.data : []
+    const taskRows = rawTasks.ok ? rawTasks.data : []
+
+    const deals = rawDeals.ok
+      ? dealRows.map((item: any) => ({
       id: item.id,
       title: item.title ?? '',
       customer:
@@ -462,21 +502,25 @@ async function refreshStore() {
       owner: item.owner ?? '',
       closeDate: item.closeDate ?? '',
     }))
+      : storeState.deals
 
-    const contacts = (rawContacts.length ? rawContacts : initialContacts).map((item: any) => ({
+    const contacts = rawContacts.ok
+      ? contactRows.map((item: any) => ({
       id: item.id,
       name: item.name ?? '',
       title: item.title ?? '',
       company:
         item.company ??
         (item.companyId
-          ? (rawCompanies.find((company: any) => company.id === item.companyId)?.name ?? '')
+          ? (companyRows.find((company: any) => company.id === item.companyId)?.name ?? '')
           : ''),
       email: item.email ?? '',
       phone: item.phone ?? '',
     }))
+      : storeState.contacts
 
-    const companies = (rawCompanies.length ? rawCompanies : initialCompanies).map((item: any) => ({
+    const companies = rawCompanies.ok
+      ? companyRows.map((item: any) => ({
       id: item.id,
       name: item.name ?? '',
       sector: item.sector ?? '',
@@ -486,29 +530,29 @@ async function refreshStore() {
         (deal) => deal.customer === item.name && !['won', 'lost'].includes(deal.stage),
       ).length,
     }))
+      : storeState.companies
 
     setStoreState({
       hydrated: true,
-      error: null,
+      error: collectionErrors.length ? collectionErrors.join(' | ') : null,
       products,
-      invoices: rawInvoices.length ? rawInvoices.map(mapInvoice) : initialInvoices,
-      quotations: rawQuotations.length ? rawQuotations.map(mapQuotation) : initialQuotations,
-      purchases: rawPurchases.length ? rawPurchases.map(mapPurchase) : initialPurchases,
+      invoices: rawInvoices.ok ? invoiceRows.map(mapInvoice) : storeState.invoices,
+      quotations: rawQuotations.ok
+        ? quotationRows.map(mapQuotation)
+        : storeState.quotations,
+      purchases: rawPurchases.ok ? purchaseRows.map(mapPurchase) : storeState.purchases,
       currentAccounts,
-      tasks: rawTasks.length ? rawTasks.map(mapTask) : initialTasks,
-      stockMovements: (rawMovements.length ? rawMovements : initialStockMovements).map(
-        (item: any) =>
-          rawMovements.length
-            ? mapMovement(item)
-            : {
-                ...item,
-                warehouse:
-                  item.warehouse ??
-                  warehouseMap.get(item.warehouseId)?.name ??
-                  'Merkez Depo',
-              },
-      ),
-      leads: rawLeads.length ? rawLeads.map(mapLead) : initialLeads,
+      tasks: rawTasks.ok ? taskRows.map(mapTask) : storeState.tasks,
+      stockMovements: rawMovements.ok
+        ? movementRows.map((item: any) => ({
+            ...mapMovement(item),
+            warehouse:
+              item.warehouse ??
+              warehouseMap.get(item.warehouseId)?.name ??
+              'Merkez Depo',
+          }))
+        : storeState.stockMovements,
+      leads: rawLeads.ok ? leadRows.map(mapLead) : storeState.leads,
       deals,
       companies,
       contacts,
