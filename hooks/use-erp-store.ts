@@ -1022,6 +1022,29 @@ async function deleteCurrentAccountAction(id: string) {
   await refreshStore()
 }
 
+async function createTransactionAction(payload: {
+  date: string
+  description: string
+  category: string
+  financeAccountId: string
+  type: 'income' | 'expense'
+  amount: number
+  currentAccountId?: string | null
+}) {
+  await api.post('/finance/transactions', {
+    date: payload.date,
+    description: payload.description,
+    category: payload.category,
+    financeAccountId: payload.financeAccountId,
+    type: payload.type,
+    amount: payload.amount,
+    currentAccountId: payload.currentAccountId ?? undefined,
+  })
+
+  await refreshStore()
+  return storeState.transactions[0] ?? null
+}
+
 async function createTaskAction(payload: Omit<Task, 'id' | 'done'> & { done?: boolean }) {
   const id = nextSequenceId(storeState.tasks.map((task) => task.id), 'TK')
   await api.post('/crm/tasks', {
@@ -1116,6 +1139,7 @@ export function useErpCollections() {
       createCurrentAccount: createCurrentAccountAction,
       updateCurrentAccount: updateCurrentAccountAction,
       deleteCurrentAccount: deleteCurrentAccountAction,
+      createTransaction: createTransactionAction,
       createTask: createTaskAction,
       toggleTask: toggleTaskAction,
       deleteTask: deleteTaskAction,

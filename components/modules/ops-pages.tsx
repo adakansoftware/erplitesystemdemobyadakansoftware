@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Building2, Wallet } from 'lucide-react'
+import { Building2, Minus, Plus, Wallet } from 'lucide-react'
 import { useAppSettings, type AppSettings } from '@/hooks/use-app-settings'
 import { useAuth } from '@/hooks/use-auth'
 import { useErpCollections } from '@/hooks/use-erp-store'
@@ -570,9 +570,18 @@ export function CurrentAccountDetailPageClient() {
 }
 
 export function FinancePageClient() {
-  const { financeAccounts, transactions } = useErpCollections()
+  const { createTransaction, financeAccounts, transactions } = useErpCollections()
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<'all' | 'cash' | 'bank'>('all')
+  const [transactionDialogOpen, setTransactionDialogOpen] = useState(false)
+  const [transactionType, setTransactionType] = useState<'income' | 'expense'>('income')
+  const [transactionForm, setTransactionForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    description: '',
+    category: 'Tahsilat',
+    financeAccountId: '',
+    amount: '',
+  })
 
   const filteredAccounts = useMemo(
     () =>
@@ -595,13 +604,72 @@ export function FinancePageClient() {
     (sum, item) => sum + item.balance,
     0,
   )
+  const latestTransaction = transactions[0]
+
+  function updateTransactionField<K extends keyof typeof transactionForm>(
+    key: K,
+    value: string,
+  ) {
+    setTransactionForm((current) => ({ ...current, [key]: value }))
+  }
+
+  function openTransactionForm(type: 'income' | 'expense') {
+    setTransactionType(type)
+    setTransactionForm({
+      date: new Date().toISOString().slice(0, 10),
+      description: '',
+      category: type === 'income' ? 'Tahsilat' : 'Odeme',
+      financeAccountId: financeAccounts[0]?.id ?? '',
+      amount: '',
+    })
+    setTransactionDialogOpen(true)
+  }
+
+  async function handleTransactionSave() {
+    if (!transactionForm.description || !transactionForm.financeAccountId) {
+      toast.error('Islem alanlarini doldurun')
+      return
+    }
+
+    const amount = Number(transactionForm.amount || 0)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Gecerli bir tutar girin')
+      return
+    }
+
+    const created = await createTransaction({
+      date: transactionForm.date,
+      description: transactionForm.description,
+      category: transactionForm.category,
+      financeAccountId: transactionForm.financeAccountId,
+      type: transactionType,
+      amount,
+    })
+
+    if (!created) {
+      toast.error('Islem kaydedilemedi')
+      return
+    }
+
+    toast.success('Islem kaydedildi')
+    setTransactionDialogOpen(false)
+  }
 
   return (
     <>
       <PageHeader
         title="Kasa & Banka"
         description="Kasa ve banka hesap bakiyeleri ile son hareketler."
-      />
+      >
+        <Button variant="outline" onClick={() => openTransactionForm('income')}>
+          <Plus data-icon="inline-start" />
+          Gelir Ekle
+        </Button>
+        <Button variant="outline" onClick={() => openTransactionForm('expense')}>
+          <Minus data-icon="inline-start" />
+          Gider Ekle
+        </Button>
+      </PageHeader>
 
       <MetricGrid
         items={[
@@ -620,9 +688,13 @@ export function FinancePageClient() {
           },
           {
             label: 'Son Islem',
-            value: transactions[0].id,
-            badge: transactionMeta[transactions[0].type].label,
-            badgeVariant: transactionMeta[transactions[0].type].variant,
+            value: latestTransaction?.id ?? '-',
+            badge: latestTransaction
+              ? transactionMeta[latestTransaction.type].label
+              : 'Bekliyor',
+            badgeVariant: latestTransaction
+              ? transactionMeta[latestTransaction.type].variant
+              : 'secondary',
           },
         ]}
       />
@@ -731,6 +803,105 @@ export function FinancePageClient() {
           </TableBody>
         </Table>
       </SectionCard>
+
+      <Dialog open={transactionDialogOpen} onOpenChange={setTransactionDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {transactionType === 'income' ? 'Yeni Gelir' : 'Yeni Gider'}
+            </DialogTitle>
+            <DialogDescription>
+              Kasa ve banka hesaplarina manuel finans hareketi ekleyin.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field>
+                <FieldLabel>Tarih</FieldLabel>
+                <Input
+                  type="date"
+                  value={transactionForm.date}
+                  onChange={(event) =>
+                    updateTransactionField('date', event.target.value)
+                  }
+                />
+              </Field>
+              <Field>
+                <FieldLabel>Kategori</FieldLabel>
+                <Select
+                  value={transactionForm.category}
+                  onValueChange={(value) =>
+                    updateTransactionField('category', value ?? '')
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Tahsilat">Tahsilat</SelectItem>
+                    <SelectItem value="Odeme">Odeme</SelectItem>
+                    <SelectItem value="Kira">Kira</SelectItem>
+                    <SelectItem value="Maas">Maas</SelectItem>
+                    <SelectItem value="Diger">Diger</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+            <Field>
+              <FieldLabel>Aciklama</FieldLabel>
+              <Input
+                value={transactionForm.description}
+                onChange={(event) =>
+                  updateTransactionField('description', event.target.value)
+                }
+                placeholder="Islem aciklamasi"
+              />
+            </Field>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field>
+                <FieldLabel>Hesap</FieldLabel>
+                <Select
+                  value={transactionForm.financeAccountId}
+                  onValueChange={(value) =>
+                    updateTransactionField('financeAccountId', value ?? '')
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Hesap secin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {financeAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel>Tutar</FieldLabel>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={transactionForm.amount}
+                  onChange={(event) =>
+                    updateTransactionField('amount', event.target.value)
+                  }
+                />
+              </Field>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTransactionDialogOpen(false)}>
+              Vazgec
+            </Button>
+            <Button onClick={() => void handleTransactionSave()}>
+              Islemi Kaydet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

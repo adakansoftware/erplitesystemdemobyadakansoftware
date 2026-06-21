@@ -2,9 +2,9 @@
 
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Plus } from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import {
   DetailList,
@@ -141,60 +141,84 @@ export function NewQuotationPageClient() {
     owner: 'Selin Kaya',
     note:
       'Santiye teslimat dahildir. Odeme 30 gun vadeli olacak sekilde planlandi.',
-    line1Product: 'Bosch GSR 12V-15 Akulu Vidalama',
-    line1Quantity: '6',
-    line1UnitPrice: '3290',
-    line1TaxRate: '20',
-    line2Product: 'Is Guvenligi Baret Beyaz',
-    line2Quantity: '20',
-    line2UnitPrice: '135',
-    line2TaxRate: '20',
   })
+  const [lines, setLines] = useState([
+    {
+      product: 'Bosch GSR 12V-15 Akulu Vidalama',
+      quantity: '6',
+      unitPrice: '3290',
+      taxRate: '20',
+    },
+    {
+      product: 'Is Guvenligi Baret Beyaz',
+      quantity: '20',
+      unitPrice: '135',
+      taxRate: '20',
+    },
+  ])
 
   const totals = useMemo(() => {
-    const lines = [
-      {
-        product: form.line1Product,
-        quantity: Number(form.line1Quantity || 0),
-        unitPrice: Number(form.line1UnitPrice || 0),
-        taxRate: Number(form.line1TaxRate || 0),
-      },
-      {
-        product: form.line2Product,
-        quantity: Number(form.line2Quantity || 0),
-        unitPrice: Number(form.line2UnitPrice || 0),
-        taxRate: Number(form.line2TaxRate || 0),
-      },
-    ]
-
-    return quotationTotals(lines)
-  }, [form])
+    return quotationTotals(
+      lines
+        .filter((line) => line.product.trim())
+        .map((line) => ({
+          product: line.product,
+          quantity: Number(line.quantity || 0),
+          unitPrice: Number(line.unitPrice || 0),
+          taxRate: Number(line.taxRate || 0),
+        })),
+    )
+  }, [lines])
 
   function updateField<K extends keyof typeof form>(key: K, value: string) {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
+  function updateLine(
+    index: number,
+    key: keyof (typeof lines)[number],
+    value: string,
+  ) {
+    setLines((current) =>
+      current.map((line, lineIndex) =>
+        lineIndex === index ? { ...line, [key]: value } : line,
+      ),
+    )
+  }
+
+  function addLine() {
+    setLines((current) => [
+      ...current,
+      { product: '', quantity: '1', unitPrice: '0', taxRate: '20' },
+    ])
+  }
+
+  function removeLine(index: number) {
+    setLines((current) => current.filter((_, lineIndex) => lineIndex !== index))
+  }
+
   async function handleSave() {
+    const payloadLines = lines
+      .filter((line) => line.product.trim())
+      .map((line) => ({
+        product: line.product,
+        quantity: Number(line.quantity || 0),
+        unitPrice: Number(line.unitPrice || 0),
+        taxRate: Number(line.taxRate || 0),
+      }))
+
+    if (!payloadLines.length) {
+      toast.error('En az bir teklif kalemi girin')
+      return
+    }
+
     const nextQuotation = await createQuotation({
       customer: form.customer,
       date: form.date,
       validUntil: form.validUntil,
       note: `${form.note}\nSorumlu: ${form.owner}`.trim(),
       status: 'draft',
-      lines: [
-        {
-          product: form.line1Product,
-          quantity: Number(form.line1Quantity || 0),
-          unitPrice: Number(form.line1UnitPrice || 0),
-          taxRate: Number(form.line1TaxRate || 0),
-        },
-        {
-          product: form.line2Product,
-          quantity: Number(form.line2Quantity || 0),
-          unitPrice: Number(form.line2UnitPrice || 0),
-          taxRate: Number(form.line2TaxRate || 0),
-        },
-      ],
+      lines: payloadLines,
     })
 
     if (!nextQuotation) {
@@ -267,42 +291,51 @@ export function NewQuotationPageClient() {
           description="Teklife eklenecek urun ve hizmet satirlari"
           contentClassName="space-y-4"
         >
-          {[
-            ['line1Product', 'line1Quantity', 'line1UnitPrice', 'line1TaxRate'],
-            ['line2Product', 'line2Quantity', 'line2UnitPrice', 'line2TaxRate'],
-          ].map(([productKey, quantityKey, priceKey, taxKey]) => (
-            <div key={productKey} className="space-y-3 rounded-lg border p-4">
+          {lines.map((line, index) => (
+            <div key={`quotation-line-${index}`} className="space-y-3 rounded-lg border p-4">
               <Input
-                value={form[productKey as keyof typeof form]}
+                value={line.product}
                 onChange={(event) =>
-                  updateField(productKey as keyof typeof form, event.target.value)
+                  updateLine(index, 'product', event.target.value)
                 }
               />
               <div className="grid gap-3 md:grid-cols-3">
                 <Input
-                  value={form[quantityKey as keyof typeof form]}
+                  value={line.quantity}
                   onChange={(event) =>
-                    updateField(
-                      quantityKey as keyof typeof form,
-                      event.target.value,
-                    )
+                    updateLine(index, 'quantity', event.target.value)
                   }
                 />
                 <Input
-                  value={form[priceKey as keyof typeof form]}
+                  value={line.unitPrice}
                   onChange={(event) =>
-                    updateField(priceKey as keyof typeof form, event.target.value)
+                    updateLine(index, 'unitPrice', event.target.value)
                   }
                 />
                 <Input
-                  value={form[taxKey as keyof typeof form]}
+                  value={line.taxRate}
                   onChange={(event) =>
-                    updateField(taxKey as keyof typeof form, event.target.value)
+                    updateLine(index, 'taxRate', event.target.value)
                   }
                 />
               </div>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeLine(index)}
+                  disabled={lines.length === 1}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           ))}
+          <Button type="button" variant="outline" onClick={addLine}>
+            <Plus data-icon="inline-start" />
+            Satir Ekle
+          </Button>
         </SectionCard>
 
         <SectionCard
@@ -350,9 +383,43 @@ export function QuotationDetailPageClient() {
     convertQuotationToInvoice,
     getQuotationById,
     hydrated,
+    updateQuotation,
     updateQuotationStatus,
   } = useErpCollections()
   const quotation = getQuotationById(params.id)
+  const [isEditing, setIsEditing] = useState(false)
+  const [form, setForm] = useState({
+    customer: '',
+    date: '',
+    validUntil: '',
+    note: '',
+  })
+  const [lines, setLines] = useState<
+    Array<{ product: string; quantity: string; unitPrice: string; taxRate: string }>
+  >([{ product: '', quantity: '1', unitPrice: '0', taxRate: '20' }])
+
+  useEffect(() => {
+    if (!quotation) {
+      return
+    }
+
+    setForm({
+      customer: quotation.customer,
+      date: quotation.date,
+      validUntil: quotation.validUntil,
+      note: quotation.note,
+    })
+    setLines(
+      quotation.lines.length
+        ? quotation.lines.map((line) => ({
+            product: line.product,
+            quantity: String(line.quantity),
+            unitPrice: String(line.unitPrice),
+            taxRate: String(line.taxRate),
+          }))
+        : [{ product: '', quantity: '1', unitPrice: '0', taxRate: '20' }],
+    )
+  }, [quotation])
 
   if (hydrated && !quotation) {
     return (
@@ -372,6 +439,17 @@ export function QuotationDetailPageClient() {
   const currentQuotation = quotation
   const meta = quotationStatusMeta[currentQuotation.status]
   const totals = quotationTotals(currentQuotation.lines)
+  const draftEditable = currentQuotation.status === 'draft'
+  const editTotals = quotationTotals(
+    lines
+      .filter((line) => line.product.trim())
+      .map((line) => ({
+        product: line.product,
+        quantity: Number(line.quantity || 0),
+        unitPrice: Number(line.unitPrice || 0),
+        taxRate: Number(line.taxRate || 0),
+      })),
+  )
 
   async function handleConvert() {
     const nextInvoice = await convertQuotationToInvoice(currentQuotation.id)
@@ -394,6 +472,66 @@ export function QuotationDetailPageClient() {
     }
 
     toast.success('Teklif durumu guncellendi')
+  }
+
+  function updateField<K extends keyof typeof form>(key: K, value: string) {
+    setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  function updateLine(
+    index: number,
+    key: keyof (typeof lines)[number],
+    value: string,
+  ) {
+    setLines((current) =>
+      current.map((line, lineIndex) =>
+        lineIndex === index ? { ...line, [key]: value } : line,
+      ),
+    )
+  }
+
+  function addLine() {
+    setLines((current) => [
+      ...current,
+      { product: '', quantity: '1', unitPrice: '0', taxRate: '20' },
+    ])
+  }
+
+  function removeLine(index: number) {
+    setLines((current) => current.filter((_, lineIndex) => lineIndex !== index))
+  }
+
+  async function handleSave() {
+    const payloadLines = lines
+      .filter((line) => line.product.trim())
+      .map((line) => ({
+        product: line.product,
+        quantity: Number(line.quantity || 0),
+        unitPrice: Number(line.unitPrice || 0),
+        taxRate: Number(line.taxRate || 0),
+      }))
+
+    if (!payloadLines.length) {
+      toast.error('En az bir teklif kalemi girin')
+      return
+    }
+
+    const updated = await updateQuotation(currentQuotation.id, {
+      customer: form.customer,
+      date: form.date,
+      validUntil: form.validUntil,
+      note: form.note,
+      status: 'draft',
+      lines: payloadLines,
+    })
+
+    if (!updated) {
+      toast.error('Teklif guncellenemedi')
+      return
+    }
+
+    toast.success('Teklif guncellendi')
+    setIsEditing(false)
   }
 
   return (
@@ -425,6 +563,12 @@ export function QuotationDetailPageClient() {
         description={`${currentQuotation.customer} icin hazirlanan teklifin detay gorunumu.`}
       >
         <Button variant="outline" render={<Link href="/teklifler">Listeye Don</Link>} />
+        {draftEditable ? (
+          <Button variant="outline" onClick={() => setIsEditing((current) => !current)}>
+            <Pencil data-icon="inline-start" />
+            {isEditing ? 'Duzenlemeyi Kapat' : 'Duzenle'}
+          </Button>
+        ) : null}
         {currentQuotation.status === 'draft' ? (
           <Button
             variant="outline"
@@ -480,81 +624,183 @@ export function QuotationDetailPageClient() {
         ]}
       />
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <SectionCard
-          title="Teklif Ozet"
-          description="Ust bilgi alanlari"
-          contentClassName="space-y-4"
-        >
-          <DetailList
-            items={[
-              { label: 'Teklif No', value: currentQuotation.id },
-              { label: 'Musteri', value: currentQuotation.customer },
-              { label: 'Teklif Tarihi', value: formatDate(currentQuotation.date) },
-              { label: 'Gecerlilik', value: formatDate(currentQuotation.validUntil) },
-              {
-                label: 'Bagli Fatura',
-                value: currentQuotation.relatedInvoice ? (
-                  <Link
-                    href={`/faturalar/${currentQuotation.relatedInvoice}`}
-                    className="hover:underline"
-                  >
-                    {currentQuotation.relatedInvoice}
-                  </Link>
-                ) : (
-                  'Henuz olusturulmadi'
-                ),
-              },
-            ]}
-          />
-          <div className="rounded-lg border p-4">
-            <p className="text-xs text-muted-foreground">Not</p>
-            <p className="mt-2 whitespace-pre-line text-sm">
-              {currentQuotation.note || 'Not girilmedi.'}
-            </p>
-          </div>
-        </SectionCard>
+      {isEditing ? (
+        <div className="grid gap-4 xl:grid-cols-3">
+          <SectionCard
+            title="Teklif Bilgileri"
+            description="Taslak belgeyi guncelleyin"
+            contentClassName="space-y-4"
+          >
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="edit-quotation-customer">Musteri</FieldLabel>
+                <Input
+                  id="edit-quotation-customer"
+                  value={form.customer}
+                  onChange={(event) => updateField('customer', event.target.value)}
+                />
+              </Field>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Input
+                  value={form.date}
+                  onChange={(event) => updateField('date', event.target.value)}
+                />
+                <Input
+                  value={form.validUntil}
+                  onChange={(event) => updateField('validUntil', event.target.value)}
+                />
+              </div>
+              <Field>
+                <FieldLabel htmlFor="edit-quotation-note">Not</FieldLabel>
+                <Textarea
+                  id="edit-quotation-note"
+                  value={form.note}
+                  onChange={(event) => updateField('note', event.target.value)}
+                />
+              </Field>
+            </FieldGroup>
+          </SectionCard>
 
-        <SectionCard
-          title="Kalemler"
-          description="Teklif satirlari"
-          contentClassName="space-y-3 xl:col-span-2"
-        >
-          {currentQuotation.lines.map((line) => (
-            <div
-              key={`${currentQuotation.id}-${line.product}`}
-              className="rounded-lg border p-4"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium">{line.product}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {line.quantity} x {formatCurrency(line.unitPrice)} - %
-                    {line.taxRate} KDV
-                  </p>
+          <SectionCard
+            title="Kalemler"
+            description="Teklif satirlarini guncelleyin"
+            contentClassName="space-y-4 xl:col-span-2"
+          >
+            {lines.map((line, index) => (
+              <div key={`edit-quotation-line-${index}`} className="space-y-3 rounded-lg border p-4">
+                <Input
+                  value={line.product}
+                  onChange={(event) => updateLine(index, 'product', event.target.value)}
+                />
+                <div className="grid gap-3 md:grid-cols-3">
+                  <Input
+                    value={line.quantity}
+                    onChange={(event) => updateLine(index, 'quantity', event.target.value)}
+                  />
+                  <Input
+                    value={line.unitPrice}
+                    onChange={(event) => updateLine(index, 'unitPrice', event.target.value)}
+                  />
+                  <Input
+                    value={line.taxRate}
+                    onChange={(event) => updateLine(index, 'taxRate', event.target.value)}
+                  />
                 </div>
-                <Badge variant="outline">{formatCurrency(lineTotal(line))}</Badge>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeLine(index)}
+                    disabled={lines.length === 1}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={addLine}>
+                <Plus data-icon="inline-start" />
+                Satir Ekle
+              </Button>
+              <Button onClick={() => void handleSave()}>Degisiklikleri Kaydet</Button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border p-3 text-sm">
+                <p className="text-muted-foreground">Ara Toplam</p>
+                <p className="mt-1 font-medium">
+                  {formatCurrency(editTotals.subtotal)}
+                </p>
+              </div>
+              <div className="rounded-lg border p-3 text-sm">
+                <p className="text-muted-foreground">KDV</p>
+                <p className="mt-1 font-medium">{formatCurrency(editTotals.tax)}</p>
+              </div>
+              <div className="rounded-lg border p-3 text-sm">
+                <p className="text-muted-foreground">Genel Toplam</p>
+                <p className="mt-1 font-medium">{formatCurrency(editTotals.total)}</p>
               </div>
             </div>
-          ))}
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-lg border p-3 text-sm">
-              <p className="text-muted-foreground">Ara Toplam</p>
-              <p className="mt-1 font-medium">
-                {formatCurrency(totals.subtotal)}
+          </SectionCard>
+        </div>
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-3">
+          <SectionCard
+            title="Teklif Ozet"
+            description="Ust bilgi alanlari"
+            contentClassName="space-y-4"
+          >
+            <DetailList
+              items={[
+                { label: 'Teklif No', value: currentQuotation.id },
+                { label: 'Musteri', value: currentQuotation.customer },
+                { label: 'Teklif Tarihi', value: formatDate(currentQuotation.date) },
+                { label: 'Gecerlilik', value: formatDate(currentQuotation.validUntil) },
+                {
+                  label: 'Bagli Fatura',
+                  value: currentQuotation.relatedInvoice ? (
+                    <Link
+                      href={`/faturalar/${currentQuotation.relatedInvoice}`}
+                      className="hover:underline"
+                    >
+                      {currentQuotation.relatedInvoice}
+                    </Link>
+                  ) : (
+                    'Henuz olusturulmadi'
+                  ),
+                },
+              ]}
+            />
+            <div className="rounded-lg border p-4">
+              <p className="text-xs text-muted-foreground">Not</p>
+              <p className="mt-2 whitespace-pre-line text-sm">
+                {currentQuotation.note || 'Not girilmedi.'}
               </p>
             </div>
-            <div className="rounded-lg border p-3 text-sm">
-              <p className="text-muted-foreground">KDV</p>
-              <p className="mt-1 font-medium">{formatCurrency(totals.tax)}</p>
+          </SectionCard>
+
+          <SectionCard
+            title="Kalemler"
+            description="Teklif satirlari"
+            contentClassName="space-y-3 xl:col-span-2"
+          >
+            {currentQuotation.lines.map((line) => (
+              <div
+                key={`${currentQuotation.id}-${line.product}`}
+                className="rounded-lg border p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">{line.product}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {line.quantity} x {formatCurrency(line.unitPrice)} - %
+                      {line.taxRate} KDV
+                    </p>
+                  </div>
+                  <Badge variant="outline">{formatCurrency(lineTotal(line))}</Badge>
+                </div>
+              </div>
+            ))}
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border p-3 text-sm">
+                <p className="text-muted-foreground">Ara Toplam</p>
+                <p className="mt-1 font-medium">
+                  {formatCurrency(totals.subtotal)}
+                </p>
+              </div>
+              <div className="rounded-lg border p-3 text-sm">
+                <p className="text-muted-foreground">KDV</p>
+                <p className="mt-1 font-medium">{formatCurrency(totals.tax)}</p>
+              </div>
+              <div className="rounded-lg border p-3 text-sm">
+                <p className="text-muted-foreground">Genel Toplam</p>
+                <p className="mt-1 font-medium">{formatCurrency(totals.total)}</p>
+              </div>
             </div>
-            <div className="rounded-lg border p-3 text-sm">
-              <p className="text-muted-foreground">Genel Toplam</p>
-              <p className="mt-1 font-medium">{formatCurrency(totals.total)}</p>
-            </div>
-          </div>
-        </SectionCard>
-      </div>
+          </SectionCard>
+        </div>
+      )}
     </>
   )
 }

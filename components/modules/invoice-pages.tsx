@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Plus } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import {
   DetailList,
@@ -148,60 +148,84 @@ export function NewInvoicePageClient() {
     dueDate: '2024-05-19',
     note:
       '30 gun vade uygulanir. Kismi tahsilat icin banka havalesi tercih edilir.',
-    line1Product: 'DeWalt DCD709 Akulu Darbeli Matkap',
-    line1Quantity: '4',
-    line1UnitPrice: '5190',
-    line1TaxRate: '20',
-    line2Product: 'DeWalt Elmas Testere Disk 230mm',
-    line2Quantity: '15',
-    line2UnitPrice: '459',
-    line2TaxRate: '20',
   })
+  const [lines, setLines] = useState([
+    {
+      product: 'DeWalt DCD709 Akulu Darbeli Matkap',
+      quantity: '4',
+      unitPrice: '5190',
+      taxRate: '20',
+    },
+    {
+      product: 'DeWalt Elmas Testere Disk 230mm',
+      quantity: '15',
+      unitPrice: '459',
+      taxRate: '20',
+    },
+  ])
 
   const totals = useMemo(() => {
-    const lines = [
-      {
-        product: form.line1Product,
-        quantity: Number(form.line1Quantity || 0),
-        unitPrice: Number(form.line1UnitPrice || 0),
-        taxRate: Number(form.line1TaxRate || 0),
-      },
-      {
-        product: form.line2Product,
-        quantity: Number(form.line2Quantity || 0),
-        unitPrice: Number(form.line2UnitPrice || 0),
-        taxRate: Number(form.line2TaxRate || 0),
-      },
-    ]
-
-    return invoiceTotals(lines)
-  }, [form])
+    return invoiceTotals(
+      lines
+        .filter((line) => line.product.trim())
+        .map((line) => ({
+          product: line.product,
+          quantity: Number(line.quantity || 0),
+          unitPrice: Number(line.unitPrice || 0),
+          taxRate: Number(line.taxRate || 0),
+        })),
+    )
+  }, [lines])
 
   function updateField<K extends keyof typeof form>(key: K, value: string) {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
+  function updateLine(
+    index: number,
+    key: keyof (typeof lines)[number],
+    value: string,
+  ) {
+    setLines((current) =>
+      current.map((line, lineIndex) =>
+        lineIndex === index ? { ...line, [key]: value } : line,
+      ),
+    )
+  }
+
+  function addLine() {
+    setLines((current) => [
+      ...current,
+      { product: '', quantity: '1', unitPrice: '0', taxRate: '20' },
+    ])
+  }
+
+  function removeLine(index: number) {
+    setLines((current) => current.filter((_, lineIndex) => lineIndex !== index))
+  }
+
   async function handleSave() {
+    const payloadLines = lines
+      .filter((line) => line.product.trim())
+      .map((line) => ({
+        product: line.product,
+        quantity: Number(line.quantity || 0),
+        unitPrice: Number(line.unitPrice || 0),
+        taxRate: Number(line.taxRate || 0),
+      }))
+
+    if (!payloadLines.length) {
+      toast.error('En az bir fatura kalemi girin')
+      return
+    }
+
     const nextInvoice = await createInvoice({
       customer: form.customer,
       issueDate: form.issueDate,
       dueDate: form.dueDate,
       note: form.note,
       status: 'draft',
-      lines: [
-        {
-          product: form.line1Product,
-          quantity: Number(form.line1Quantity || 0),
-          unitPrice: Number(form.line1UnitPrice || 0),
-          taxRate: Number(form.line1TaxRate || 0),
-        },
-        {
-          product: form.line2Product,
-          quantity: Number(form.line2Quantity || 0),
-          unitPrice: Number(form.line2UnitPrice || 0),
-          taxRate: Number(form.line2TaxRate || 0),
-        },
-      ],
+      lines: payloadLines,
     })
 
     if (!nextInvoice) {
@@ -268,42 +292,51 @@ export function NewInvoicePageClient() {
           description="Belgeye eklenecek urun ve hizmet satirlari"
           contentClassName="space-y-4"
         >
-          {[
-            ['line1Product', 'line1Quantity', 'line1UnitPrice', 'line1TaxRate'],
-            ['line2Product', 'line2Quantity', 'line2UnitPrice', 'line2TaxRate'],
-          ].map(([productKey, quantityKey, priceKey, taxKey]) => (
-            <div key={productKey} className="space-y-3 rounded-lg border p-4">
+          {lines.map((line, index) => (
+            <div key={`invoice-line-${index}`} className="space-y-3 rounded-lg border p-4">
               <Input
-                value={form[productKey as keyof typeof form]}
+                value={line.product}
                 onChange={(event) =>
-                  updateField(productKey as keyof typeof form, event.target.value)
+                  updateLine(index, 'product', event.target.value)
                 }
               />
               <div className="grid gap-3 md:grid-cols-3">
                 <Input
-                  value={form[quantityKey as keyof typeof form]}
+                  value={line.quantity}
                   onChange={(event) =>
-                    updateField(
-                      quantityKey as keyof typeof form,
-                      event.target.value,
-                    )
+                    updateLine(index, 'quantity', event.target.value)
                   }
                 />
                 <Input
-                  value={form[priceKey as keyof typeof form]}
+                  value={line.unitPrice}
                   onChange={(event) =>
-                    updateField(priceKey as keyof typeof form, event.target.value)
+                    updateLine(index, 'unitPrice', event.target.value)
                   }
                 />
                 <Input
-                  value={form[taxKey as keyof typeof form]}
+                  value={line.taxRate}
                   onChange={(event) =>
-                    updateField(taxKey as keyof typeof form, event.target.value)
+                    updateLine(index, 'taxRate', event.target.value)
                   }
                 />
               </div>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeLine(index)}
+                  disabled={lines.length === 1}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           ))}
+          <Button type="button" variant="outline" onClick={addLine}>
+            <Plus data-icon="inline-start" />
+            Satir Ekle
+          </Button>
         </SectionCard>
 
         <SectionCard
