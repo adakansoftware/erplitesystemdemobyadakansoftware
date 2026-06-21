@@ -11,8 +11,23 @@ import { MetricGrid, SectionCard } from '@/components/shared/module-primitives'
 import { SearchInput } from '@/components/shared/search-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import {
   Table,
@@ -30,6 +45,15 @@ import {
 import { dealStageMeta, leadStatusMeta, taskPriorityMeta } from '@/lib/data/crm'
 import { transactionMeta } from '@/lib/data/finance'
 import { formatCurrency, formatDate, formatNumber } from '@/lib/ui-meta'
+import { api } from '@/lib/api/client'
+
+type ManagedUser = {
+  id: string
+  name: string
+  email: string
+  role: 'admin' | 'manager' | 'sales'
+  active: boolean
+}
 
 function readHash() {
   if (typeof window === 'undefined') return ''
@@ -987,16 +1011,125 @@ export function TasksPageClient() {
 
 export function SettingsPageClient() {
   const { settings, updateSettings, isReady } = useAppSettings()
-  const { currentUser } = useAuth()
+  const { currentUser, isAdmin } = useAuth()
   const [form, setForm] = useState(settings)
-  const canManageSettings = currentUser?.role === 'admin'
+  const canManageSettings = isAdmin
+  const [users, setUsers] = useState<ManagedUser[]>([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [userDialogOpen, setUserDialogOpen] = useState(false)
+  const [editingUserId, setEditingUserId] = useState<string | null>(null)
+  const [userForm, setUserForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'sales' as ManagedUser['role'],
+    active: true,
+  })
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  })
 
   useEffect(() => {
     if (isReady) setForm(settings)
   }, [isReady, settings])
 
+  useEffect(() => {
+    if (!canManageSettings) {
+      setUsers([])
+      return
+    }
+
+    let cancelled = false
+    setUsersLoading(true)
+
+    void api
+      .get<ManagedUser[] | { data: ManagedUser[] }>('/users')
+      .then((result) => {
+        if (cancelled) {
+          return
+        }
+
+        const nextUsers = Array.isArray(result)
+          ? result
+          : Array.isArray((result as { data?: ManagedUser[] }).data)
+            ? ((result as { data: ManagedUser[] }).data as ManagedUser[])
+            : []
+        setUsers(nextUsers)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          toast.error('Kullanici listesi alinamadi')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setUsersLoading(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [canManageSettings])
+
   function updateField<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     setForm((current: AppSettings) => ({ ...current, [key]: value }))
+  }
+
+  function updateUserField<K extends keyof typeof userForm>(key: K, value: (typeof userForm)[K]) {
+    setUserForm((current) => ({ ...current, [key]: value }))
+  }
+
+  function updatePasswordField<K extends keyof typeof passwordForm>(
+    key: K,
+    value: (typeof passwordForm)[K],
+  ) {
+    setPasswordForm((current) => ({ ...current, [key]: value }))
+  }
+
+  async function reloadUsers() {
+    if (!canManageSettings) {
+      return
+    }
+
+    setUsersLoading(true)
+    try {
+      const result = await api.get<ManagedUser[] | { data: ManagedUser[] }>('/users')
+      const nextUsers = Array.isArray(result)
+        ? result
+        : Array.isArray((result as { data?: ManagedUser[] }).data)
+          ? ((result as { data: ManagedUser[] }).data as ManagedUser[])
+          : []
+      setUsers(nextUsers)
+    } finally {
+      setUsersLoading(false)
+    }
+  }
+
+  function openCreateUserDialog() {
+    setEditingUserId(null)
+    setUserForm({
+      name: '',
+      email: '',
+      password: '',
+      role: 'sales',
+      active: true,
+    })
+    setUserDialogOpen(true)
+  }
+
+  function openEditUserDialog(user: ManagedUser) {
+    setEditingUserId(user.id)
+    setUserForm({
+      name: user.name,
+      email: user.email,
+      password: '',
+      role: user.role,
+      active: user.active,
+    })
+    setUserDialogOpen(true)
   }
 
   async function handleSave() {
@@ -1007,6 +1140,69 @@ export function SettingsPageClient() {
 
     await updateSettings(form)
     toast.success('Ayarlar kaydedildi')
+  }
+
+  async function handleSaveUser() {
+    try {
+      if (editingUserId) {
+        await api.put(`/users/${editingUserId}`, {
+          name: userForm.name,
+          role: userForm.role,
+          active: userForm.active,
+        })
+        toast.success('Kullanici guncellendi')
+      } else {
+        await api.post('/users', {
+          name: userForm.name,
+          email: userForm.email,
+          password: userForm.password,
+          role: userForm.role,
+        })
+        toast.success('Kullanici olusturuldu')
+      }
+
+      setUserDialogOpen(false)
+      await reloadUsers()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Kullanici kaydedilemedi')
+    }
+  }
+
+  async function handleDeleteUser(user: ManagedUser) {
+    if (user.id === currentUser?.id) {
+      toast.error('Kendi kullanicinizi pasife alamazsiniz')
+      return
+    }
+
+    try {
+      await api.delete(`/users/${user.id}`)
+      toast.success('Kullanici pasife alindi')
+      await reloadUsers()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Kullanici silinemedi')
+    }
+  }
+
+  async function handlePasswordChange() {
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast.error('Yeni sifre alanlari ayni olmali')
+      return
+    }
+
+    try {
+      await api.patch('/auth/password', {
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      })
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      })
+      toast.success('Sifre guncellendi')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Sifre guncellenemedi')
+    }
   }
 
   return (
@@ -1036,6 +1232,10 @@ export function SettingsPageClient() {
         <TabsList>
           <TabsTrigger value="company">Firma Bilgileri</TabsTrigger>
           <TabsTrigger value="notifications">Bildirimler</TabsTrigger>
+          <TabsTrigger value="security">Guvenlik</TabsTrigger>
+          {canManageSettings ? (
+            <TabsTrigger value="users">Kullanicilar</TabsTrigger>
+          ) : null}
         </TabsList>
         <TabsContent value="company">
           <SectionCard
@@ -1163,7 +1363,207 @@ export function SettingsPageClient() {
           </div>
           </SectionCard>
         </TabsContent>
+        <TabsContent value="security">
+          <SectionCard
+            title="Sifre Degistir"
+            description="Mevcut sifrenizi dogrulayip yeni sifrenizi kaydedin."
+            contentClassName="space-y-4"
+          >
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="current-password">Mevcut Sifre</FieldLabel>
+                <Input
+                  id="current-password"
+                  type="password"
+                  value={passwordForm.currentPassword}
+                  onChange={(event) =>
+                    updatePasswordField('currentPassword', event.target.value)
+                  }
+                />
+              </Field>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="new-password">Yeni Sifre</FieldLabel>
+                  <Input
+                    id="new-password"
+                    type="password"
+                    value={passwordForm.newPassword}
+                    onChange={(event) =>
+                      updatePasswordField('newPassword', event.target.value)
+                    }
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="confirm-password">Yeni Sifre (Tekrar)</FieldLabel>
+                  <Input
+                    id="confirm-password"
+                    type="password"
+                    value={passwordForm.confirmPassword}
+                    onChange={(event) =>
+                      updatePasswordField('confirmPassword', event.target.value)
+                    }
+                  />
+                </Field>
+              </div>
+            </FieldGroup>
+            <div className="flex justify-end">
+              <Button onClick={() => void handlePasswordChange()}>
+                Sifreyi Guncelle
+              </Button>
+            </div>
+          </SectionCard>
+        </TabsContent>
+        {canManageSettings ? (
+          <TabsContent value="users">
+            <SectionCard
+              title="Kullanici Yonetimi"
+              description="ERP kullanicilari, roller ve aktiflik durumu"
+              action={
+                <Button onClick={openCreateUserDialog}>Yeni Kullanici</Button>
+              }
+              contentClassName="px-0"
+            >
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-6">Ad</TableHead>
+                    <TableHead>E-posta</TableHead>
+                    <TableHead>Rol</TableHead>
+                    <TableHead>Durum</TableHead>
+                    <TableHead className="pr-6 text-right">Islem</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {usersLoading ? (
+                    <TableRow>
+                      <TableCell className="pl-6 text-muted-foreground" colSpan={5}>
+                        Kullanicilar yukleniyor...
+                      </TableCell>
+                    </TableRow>
+                  ) : users.map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell className="pl-6 font-medium">{user.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                      <TableCell>
+                        <Badge variant={user.role === 'admin' ? 'success' : user.role === 'manager' ? 'info' : 'secondary'}>
+                          {user.role}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={user.active ? 'success' : 'secondary'}>
+                          {user.active ? 'Aktif' : 'Pasif'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="pr-6 text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEditUserDialog(user)}
+                          >
+                            Duzenle
+                          </Button>
+                          {user.id !== currentUser?.id ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => void handleDeleteUser(user)}
+                            >
+                              Sil
+                            </Button>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </SectionCard>
+          </TabsContent>
+        ) : null}
       </Tabs>
+
+      <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {editingUserId ? 'Kullaniciyi Duzenle' : 'Yeni Kullanici'}
+            </DialogTitle>
+            <DialogDescription>
+              ERP kullanicisini ve rol bilgisini yonetin.
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="user-name">Ad Soyad</FieldLabel>
+              <Input
+                id="user-name"
+                value={userForm.name}
+                onChange={(event) => updateUserField('name', event.target.value)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="user-email">E-posta</FieldLabel>
+              <Input
+                id="user-email"
+                value={userForm.email}
+                onChange={(event) => updateUserField('email', event.target.value)}
+                disabled={Boolean(editingUserId)}
+              />
+            </Field>
+            {!editingUserId ? (
+              <Field>
+                <FieldLabel htmlFor="user-password">Sifre</FieldLabel>
+                <Input
+                  id="user-password"
+                  type="password"
+                  value={userForm.password}
+                  onChange={(event) =>
+                    updateUserField('password', event.target.value)
+                  }
+                />
+              </Field>
+            ) : null}
+            <Field>
+              <FieldLabel>Rol</FieldLabel>
+              <Select
+                value={userForm.role}
+                onValueChange={(value) =>
+                  updateUserField('role', value as ManagedUser['role'])
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">admin</SelectItem>
+                  <SelectItem value="manager">manager</SelectItem>
+                  <SelectItem value="sales">sales</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            {editingUserId ? (
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <p className="text-sm font-medium">Aktif Kullanici</p>
+                  <p className="text-xs text-muted-foreground">
+                    Pasif kullanicilar giris yapamaz.
+                  </p>
+                </div>
+                <Switch
+                  checked={userForm.active}
+                  onCheckedChange={(checked) => updateUserField('active', checked)}
+                />
+              </div>
+            ) : null}
+          </FieldGroup>
+          <DialogFooter>
+            <Button onClick={() => void handleSaveUser()}>
+              {editingUserId ? 'Kaydet' : 'Kullanici Olustur'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

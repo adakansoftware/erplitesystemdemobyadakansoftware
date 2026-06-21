@@ -29,15 +29,27 @@ exports.quotationsRoutes = new hono_1.Hono();
 exports.quotationsRoutes.get('/', async (c) => {
     const status = c.req.query('status');
     const search = c.req.query('search');
+    const page = Math.max(1, Number(c.req.query('page') ?? 1));
+    const limit = Math.min(100, Number(c.req.query('limit') ?? 50));
+    const offset = (page - 1) * limit;
     const filters = [
         status ? (0, drizzle_orm_1.eq)(schema_1.quotations.status, status) : undefined,
         search ? (0, drizzle_orm_1.ilike)(schema_1.quotations.customer, `%${search}%`) : undefined,
     ].filter(Boolean);
-    const items = await client_1.db
-        .select()
-        .from(schema_1.quotations)
-        .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined);
-    const lines = await client_1.db.select().from(schema_1.quotationLines);
+    const [items, lines, countResult] = await Promise.all([
+        client_1.db
+            .select()
+            .from(schema_1.quotations)
+            .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined)
+            .limit(limit)
+            .offset(offset),
+        client_1.db.select().from(schema_1.quotationLines),
+        client_1.db
+            .select({ count: (0, drizzle_orm_1.sql) `count(*)` })
+            .from(schema_1.quotations)
+            .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined),
+    ]);
+    const total = Number(countResult[0]?.count ?? 0);
     return (0, http_1.ok)(c, items.map((item) => ({
         ...item,
         relatedInvoice: item.convertedToInvoiceId,
@@ -51,7 +63,7 @@ exports.quotationsRoutes.get('/', async (c) => {
             unitPrice: Number(line.unitPrice),
             taxRate: Number(line.taxRate),
         })),
-    })));
+    })), { total, page, limit, pages: Math.ceil(total / limit) });
 });
 exports.quotationsRoutes.get('/:id', async (c) => {
     const id = c.req.param('id');

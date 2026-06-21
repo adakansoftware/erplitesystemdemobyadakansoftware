@@ -9,6 +9,7 @@ const schema_1 = require("../db/schema");
 const ids_1 = require("../lib/ids");
 const rules_1 = require("../lib/rules");
 const http_1 = require("../lib/http");
+const auth_1 = require("../middleware/auth");
 const validate_1 = require("../middleware/validate");
 const lineSchema = zod_1.z.object({
     productId: zod_1.z.string().optional().nullable(),
@@ -31,15 +32,26 @@ exports.invoicesRoutes = new hono_1.Hono();
 exports.invoicesRoutes.get('/', async (c) => {
     const status = c.req.query('status');
     const search = c.req.query('search');
+    const page = Math.max(1, Number(c.req.query('page') ?? 1));
+    const limit = Math.min(100, Number(c.req.query('limit') ?? 50));
+    const offset = (page - 1) * limit;
     const filters = [
         status ? (0, drizzle_orm_1.eq)(schema_1.invoices.status, status) : undefined,
         search ? (0, drizzle_orm_1.ilike)(schema_1.invoices.customer, `%${search}%`) : undefined,
     ].filter(Boolean);
-    const items = await client_1.db
-        .select()
-        .from(schema_1.invoices)
-        .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined);
-    const lines = await client_1.db.select().from(schema_1.invoiceLines);
+    const [items, lines, countResult] = await Promise.all([
+        client_1.db
+            .select()
+            .from(schema_1.invoices)
+            .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined)
+            .limit(limit)
+            .offset(offset),
+        client_1.db.select().from(schema_1.invoiceLines),
+        client_1.db
+            .select({ count: (0, drizzle_orm_1.sql) `count(*)` })
+            .from(schema_1.invoices)
+            .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined),
+    ]);
     const now = new Date().toISOString().slice(0, 10);
     const normalized = items.map((item) => ({
         ...item,
@@ -56,7 +68,8 @@ exports.invoicesRoutes.get('/', async (c) => {
             taxRate: Number(line.taxRate),
         })),
     }));
-    return (0, http_1.ok)(c, normalized);
+    const total = Number(countResult[0]?.count ?? 0);
+    return (0, http_1.ok)(c, normalized, { total, page, limit, pages: Math.ceil(total / limit) });
 });
 exports.invoicesRoutes.get('/:id', async (c) => {
     const id = c.req.param('id');
@@ -182,7 +195,7 @@ exports.invoicesRoutes.put('/:id', (0, validate_1.validate)(invoiceSchema), asyn
     await (0, rules_1.createStockOutForInvoice)(id);
     return (0, http_1.ok)(c, { id });
 });
-exports.invoicesRoutes.delete('/:id', async (c) => {
+exports.invoicesRoutes.delete('/:id', (0, auth_1.requireRole)('admin', 'manager'), async (c) => {
     const id = c.req.param('id');
     const [invoice] = await client_1.db.select().from(schema_1.invoices).where((0, drizzle_orm_1.eq)(schema_1.invoices.id, id));
     if (invoice?.status !== 'draft') {

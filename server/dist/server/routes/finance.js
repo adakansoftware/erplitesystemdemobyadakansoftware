@@ -9,6 +9,7 @@ const schema_1 = require("../db/schema");
 const ids_1 = require("../lib/ids");
 const http_1 = require("../lib/http");
 const serializers_1 = require("../lib/serializers");
+const auth_1 = require("../middleware/auth");
 const validate_1 = require("../middleware/validate");
 const financeAccountSchema = zod_1.z.object({
     id: zod_1.z.string().optional(),
@@ -55,20 +56,33 @@ exports.financeRoutes.post('/accounts', (0, validate_1.validate)(financeAccountS
 exports.financeRoutes.get('/transactions', async (c) => {
     const accountId = c.req.query('accountId');
     const type = c.req.query('type');
+    const page = Math.max(1, Number(c.req.query('page') ?? 1));
+    const limit = Math.min(100, Number(c.req.query('limit') ?? 50));
+    const offset = (page - 1) * limit;
     const filters = [
         accountId ? (0, drizzle_orm_1.eq)(schema_1.transactions.financeAccountId, accountId) : undefined,
         type ? (0, drizzle_orm_1.eq)(schema_1.transactions.type, type) : undefined,
     ].filter(Boolean);
-    const [txs, accounts] = await Promise.all([
-        client_1.db.select().from(schema_1.transactions).where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined),
+    const [txs, accounts, countResult] = await Promise.all([
+        client_1.db
+            .select()
+            .from(schema_1.transactions)
+            .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined)
+            .limit(limit)
+            .offset(offset),
         client_1.db.select().from(schema_1.financeAccounts),
+        client_1.db
+            .select({ count: (0, drizzle_orm_1.sql) `count(*)` })
+            .from(schema_1.transactions)
+            .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined),
     ]);
     const accountMap = new Map(accounts.map((account) => [account.id, account.name]));
+    const total = Number(countResult[0]?.count ?? 0);
     return (0, http_1.ok)(c, txs.map((item) => ({
         ...item,
         amount: Number(item.amount),
         account: accountMap.get(item.financeAccountId) ?? item.financeAccountId,
-    })));
+    })), { total, page, limit, pages: Math.ceil(total / limit) });
 });
 exports.financeRoutes.post('/transactions', (0, validate_1.validate)(transactionSchema), async (c) => {
     const body = c.get('validatedBody');
@@ -85,7 +99,7 @@ exports.financeRoutes.post('/transactions', (0, validate_1.validate)(transaction
     });
     return (0, http_1.created)(c, body);
 });
-exports.financeRoutes.delete('/transactions/:id', async (c) => {
+exports.financeRoutes.delete('/transactions/:id', (0, auth_1.requireRole)('admin'), async (c) => {
     const id = c.req.param('id');
     await client_1.db.delete(schema_1.transactions).where((0, drizzle_orm_1.eq)(schema_1.transactions.id, id));
     return (0, http_1.ok)(c, { id });

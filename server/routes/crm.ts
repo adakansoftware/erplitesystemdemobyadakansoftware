@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { db } from '../db/client'
 import { companies, contacts, deals, leads, tasks } from '../db/schema'
 import { created, ok } from '../lib/http'
+import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
 
 function crudRoutes<T extends z.ZodTypeAny>(
@@ -15,11 +16,16 @@ function crudRoutes<T extends z.ZodTypeAny>(
 ) {
   app.get(base, async (c) => {
     const search = c.req.query('search')
-    const items = await db
-      .select()
-      .from(table)
-      .where(search && searchColumn ? ilike(searchColumn, `%${search}%`) : undefined)
-    return ok(c, items)
+    const page = Math.max(1, Number(c.req.query('page') ?? 1))
+    const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
+    const offset = (page - 1) * limit
+    const whereClause = search && searchColumn ? ilike(searchColumn, `%${search}%`) : undefined
+    const [items, countResult] = await Promise.all([
+      db.select().from(table).where(whereClause).limit(limit).offset(offset),
+      db.select({ count: sql<string>`count(*)` }).from(table).where(whereClause),
+    ])
+    const total = Number(countResult[0]?.count ?? 0)
+    return ok(c, items, { total, page, limit, pages: Math.ceil(total / limit) })
   })
 
   app.post(base, validate(schema), async (c) => {
@@ -166,7 +172,7 @@ crmRoutes.patch('/tasks/:id/toggle', async (c) => {
   return ok(c, { id, done: !task?.done })
 })
 
-crmRoutes.delete('/tasks/:id', async (c) => {
+crmRoutes.delete('/tasks/:id', requireRole('admin', 'manager'), async (c) => {
   const id = c.req.param('id')
   await db.delete(tasks).where(eq(tasks.id, id))
   return ok(c, { id })

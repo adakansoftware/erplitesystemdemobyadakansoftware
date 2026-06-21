@@ -1,11 +1,12 @@
 import { Hono } from 'hono'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { financeAccounts, transactions } from '../db/schema'
 import { nextTransactionId } from '../lib/ids'
 import { created, ok } from '../lib/http'
 import { toNumber } from '../lib/serializers'
+import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
 
 const financeAccountSchema = z.object({
@@ -61,24 +62,38 @@ financeRoutes.post('/accounts', validate(financeAccountSchema), async (c) => {
 financeRoutes.get('/transactions', async (c) => {
   const accountId = c.req.query('accountId')
   const type = c.req.query('type')
+  const page = Math.max(1, Number(c.req.query('page') ?? 1))
+  const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
+  const offset = (page - 1) * limit
   const filters = [
     accountId ? eq(transactions.financeAccountId, accountId) : undefined,
     type ? eq(transactions.type, type) : undefined,
   ].filter(Boolean)
 
-  const [txs, accounts] = await Promise.all([
-    db.select().from(transactions).where(filters.length ? and(...filters) : undefined),
+  const [txs, accounts, countResult] = await Promise.all([
+    db
+      .select()
+      .from(transactions)
+      .where(filters.length ? and(...filters) : undefined)
+      .limit(limit)
+      .offset(offset),
     db.select().from(financeAccounts),
+    db
+      .select({ count: sql<string>`count(*)` })
+      .from(transactions)
+      .where(filters.length ? and(...filters) : undefined),
   ])
   const accountMap = new Map(accounts.map((account) => [account.id, account.name]))
+  const total = Number((countResult as Array<{ count: string }>)[0]?.count ?? 0)
 
   return ok(
     c,
     txs.map((item) => ({
       ...item,
-      amount: Number(item.amount),
-      account: accountMap.get(item.financeAccountId) ?? item.financeAccountId,
-    })),
+        amount: Number(item.amount),
+        account: accountMap.get(item.financeAccountId) ?? item.financeAccountId,
+      })),
+    { total, page, limit, pages: Math.ceil(total / limit) },
   )
 })
 
@@ -98,7 +113,7 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
   return created(c, body)
 })
 
-financeRoutes.delete('/transactions/:id', async (c) => {
+financeRoutes.delete('/transactions/:id', requireRole('admin'), async (c) => {
   const id = c.req.param('id')
   await db.delete(transactions).where(eq(transactions.id, id))
   return ok(c, { id })

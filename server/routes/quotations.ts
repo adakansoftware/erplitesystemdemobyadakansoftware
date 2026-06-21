@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, ilike } from 'drizzle-orm'
+import { and, eq, ilike, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { invoiceLines, invoices, quotationLines, quotations } from '../db/schema'
@@ -30,15 +30,27 @@ export const quotationsRoutes = new Hono()
 quotationsRoutes.get('/', async (c) => {
   const status = c.req.query('status')
   const search = c.req.query('search')
+  const page = Math.max(1, Number(c.req.query('page') ?? 1))
+  const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
+  const offset = (page - 1) * limit
   const filters = [
     status ? eq(quotations.status, status) : undefined,
     search ? ilike(quotations.customer, `%${search}%`) : undefined,
   ].filter(Boolean)
-  const items = await db
-    .select()
-    .from(quotations)
-    .where(filters.length ? and(...filters) : undefined)
-  const lines = await db.select().from(quotationLines)
+  const [items, lines, countResult] = await Promise.all([
+    db
+      .select()
+      .from(quotations)
+      .where(filters.length ? and(...filters) : undefined)
+      .limit(limit)
+      .offset(offset),
+    db.select().from(quotationLines),
+    db
+      .select({ count: sql<string>`count(*)` })
+      .from(quotations)
+      .where(filters.length ? and(...filters) : undefined),
+  ])
+  const total = Number(countResult[0]?.count ?? 0)
   return ok(
     c,
     items.map((item) => ({
@@ -55,6 +67,7 @@ quotationsRoutes.get('/', async (c) => {
           taxRate: Number(line.taxRate),
         })),
     })),
+    { total, page, limit, pages: Math.ceil(total / limit) },
   )
 })
 

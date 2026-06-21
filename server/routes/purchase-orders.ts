@@ -1,11 +1,12 @@
 import { Hono } from 'hono'
-import { and, eq, ilike } from 'drizzle-orm'
+import { and, eq, ilike, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { purchaseOrderLines, purchaseOrders } from '../db/schema'
 import { nextDocumentId } from '../lib/ids'
 import { createStockInForPurchaseOrder } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
+import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
 
 const lineSchema = z.object({
@@ -34,12 +35,27 @@ export const purchaseOrdersRoutes = new Hono()
 purchaseOrdersRoutes.get('/', async (c) => {
   const status = c.req.query('status')
   const search = c.req.query('search')
+  const page = Math.max(1, Number(c.req.query('page') ?? 1))
+  const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
+  const offset = (page - 1) * limit
   const filters = [
     status ? eq(purchaseOrders.status, status) : undefined,
     search ? ilike(purchaseOrders.supplier, `%${search}%`) : undefined,
   ].filter(Boolean)
-  const items = await db.select().from(purchaseOrders).where(filters.length ? and(...filters) : undefined)
-  const lines = await db.select().from(purchaseOrderLines)
+  const [items, lines, countResult] = await Promise.all([
+    db
+      .select()
+      .from(purchaseOrders)
+      .where(filters.length ? and(...filters) : undefined)
+      .limit(limit)
+      .offset(offset),
+    db.select().from(purchaseOrderLines),
+    db
+      .select({ count: sql<string>`count(*)` })
+      .from(purchaseOrders)
+      .where(filters.length ? and(...filters) : undefined),
+  ])
+  const total = Number(countResult[0]?.count ?? 0)
   return ok(
     c,
     items.map((item) => ({
@@ -57,6 +73,7 @@ purchaseOrdersRoutes.get('/', async (c) => {
           receivedQty: Number(line.receivedQty ?? 0),
         })),
     })),
+    { total, page, limit, pages: Math.ceil(total / limit) },
   )
 })
 
@@ -110,7 +127,7 @@ purchaseOrdersRoutes.post('/', validate(purchaseSchema), async (c) => {
   return created(c, { id })
 })
 
-purchaseOrdersRoutes.put('/:id/status', validate(z.object({ status: z.string() })), async (c) => {
+purchaseOrdersRoutes.put('/:id/status', requireRole('admin', 'manager'), validate(z.object({ status: z.string() })), async (c) => {
   const id = c.req.param('id')
   const body = c.get('validatedBody') as { status: string }
   await db

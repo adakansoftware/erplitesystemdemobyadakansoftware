@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, ilike } from 'drizzle-orm'
+import { and, eq, ilike, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { currentAccounts, transactions } from '../db/schema'
@@ -25,16 +25,27 @@ export const currentAccountsRoutes = new Hono()
 currentAccountsRoutes.get('/', async (c) => {
   const type = c.req.query('type')
   const search = c.req.query('search')
+  const page = Math.max(1, Number(c.req.query('page') ?? 1))
+  const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
+  const offset = (page - 1) * limit
   const filters = [
     type ? eq(currentAccounts.type, type) : undefined,
     search ? ilike(currentAccounts.name, `%${search}%`) : undefined,
     eq(currentAccounts.active, true),
   ].filter(Boolean)
 
-  const items = await db
-    .select()
-    .from(currentAccounts)
-    .where(and(...filters))
+  const [items, countResult] = await Promise.all([
+    db
+      .select()
+      .from(currentAccounts)
+      .where(and(...filters))
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ count: sql<string>`count(*)` })
+      .from(currentAccounts)
+      .where(and(...filters)),
+  ])
 
   const withBalance = await Promise.all(
     items.map(async (item) => ({
@@ -42,7 +53,8 @@ currentAccountsRoutes.get('/', async (c) => {
       balance: await calculateCurrentAccountBalance(item.id),
     })),
   )
-  return ok(c, withBalance)
+  const total = Number(countResult[0]?.count ?? 0)
+  return ok(c, withBalance, { total, page, limit, pages: Math.ceil(total / limit) })
 })
 
 currentAccountsRoutes.get('/:id', async (c) => {

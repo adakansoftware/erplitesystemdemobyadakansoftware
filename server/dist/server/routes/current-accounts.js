@@ -25,20 +25,32 @@ exports.currentAccountsRoutes = new hono_1.Hono();
 exports.currentAccountsRoutes.get('/', async (c) => {
     const type = c.req.query('type');
     const search = c.req.query('search');
+    const page = Math.max(1, Number(c.req.query('page') ?? 1));
+    const limit = Math.min(100, Number(c.req.query('limit') ?? 50));
+    const offset = (page - 1) * limit;
     const filters = [
         type ? (0, drizzle_orm_1.eq)(schema_1.currentAccounts.type, type) : undefined,
         search ? (0, drizzle_orm_1.ilike)(schema_1.currentAccounts.name, `%${search}%`) : undefined,
         (0, drizzle_orm_1.eq)(schema_1.currentAccounts.active, true),
     ].filter(Boolean);
-    const items = await client_1.db
-        .select()
-        .from(schema_1.currentAccounts)
-        .where((0, drizzle_orm_1.and)(...filters));
+    const [items, countResult] = await Promise.all([
+        client_1.db
+            .select()
+            .from(schema_1.currentAccounts)
+            .where((0, drizzle_orm_1.and)(...filters))
+            .limit(limit)
+            .offset(offset),
+        client_1.db
+            .select({ count: (0, drizzle_orm_1.sql) `count(*)` })
+            .from(schema_1.currentAccounts)
+            .where((0, drizzle_orm_1.and)(...filters)),
+    ]);
     const withBalance = await Promise.all(items.map(async (item) => ({
         ...item,
         balance: await (0, rules_1.calculateCurrentAccountBalance)(item.id),
     })));
-    return (0, http_1.ok)(c, withBalance);
+    const total = Number(countResult[0]?.count ?? 0);
+    return (0, http_1.ok)(c, withBalance, { total, page, limit, pages: Math.ceil(total / limit) });
 });
 exports.currentAccountsRoutes.get('/:id', async (c) => {
     const id = c.req.param('id');

@@ -9,6 +9,7 @@ const schema_1 = require("../db/schema");
 const ids_1 = require("../lib/ids");
 const rules_1 = require("../lib/rules");
 const http_1 = require("../lib/http");
+const auth_1 = require("../middleware/auth");
 const validate_1 = require("../middleware/validate");
 const lineSchema = zod_1.z.object({
     id: zod_1.z.string().optional(),
@@ -33,12 +34,27 @@ exports.purchaseOrdersRoutes = new hono_1.Hono();
 exports.purchaseOrdersRoutes.get('/', async (c) => {
     const status = c.req.query('status');
     const search = c.req.query('search');
+    const page = Math.max(1, Number(c.req.query('page') ?? 1));
+    const limit = Math.min(100, Number(c.req.query('limit') ?? 50));
+    const offset = (page - 1) * limit;
     const filters = [
         status ? (0, drizzle_orm_1.eq)(schema_1.purchaseOrders.status, status) : undefined,
         search ? (0, drizzle_orm_1.ilike)(schema_1.purchaseOrders.supplier, `%${search}%`) : undefined,
     ].filter(Boolean);
-    const items = await client_1.db.select().from(schema_1.purchaseOrders).where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined);
-    const lines = await client_1.db.select().from(schema_1.purchaseOrderLines);
+    const [items, lines, countResult] = await Promise.all([
+        client_1.db
+            .select()
+            .from(schema_1.purchaseOrders)
+            .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined)
+            .limit(limit)
+            .offset(offset),
+        client_1.db.select().from(schema_1.purchaseOrderLines),
+        client_1.db
+            .select({ count: (0, drizzle_orm_1.sql) `count(*)` })
+            .from(schema_1.purchaseOrders)
+            .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined),
+    ]);
+    const total = Number(countResult[0]?.count ?? 0);
     return (0, http_1.ok)(c, items.map((item) => ({
         ...item,
         lines: lines
@@ -53,7 +69,7 @@ exports.purchaseOrdersRoutes.get('/', async (c) => {
             taxRate: Number(line.taxRate),
             receivedQty: Number(line.receivedQty ?? 0),
         })),
-    })));
+    })), { total, page, limit, pages: Math.ceil(total / limit) });
 });
 exports.purchaseOrdersRoutes.get('/:id', async (c) => {
     const id = c.req.param('id');
@@ -102,7 +118,7 @@ exports.purchaseOrdersRoutes.post('/', (0, validate_1.validate)(purchaseSchema),
     })));
     return (0, http_1.created)(c, { id });
 });
-exports.purchaseOrdersRoutes.put('/:id/status', (0, validate_1.validate)(zod_1.z.object({ status: zod_1.z.string() })), async (c) => {
+exports.purchaseOrdersRoutes.put('/:id/status', (0, auth_1.requireRole)('admin', 'manager'), (0, validate_1.validate)(zod_1.z.object({ status: zod_1.z.string() })), async (c) => {
     const id = c.req.param('id');
     const body = c.get('validatedBody');
     await client_1.db

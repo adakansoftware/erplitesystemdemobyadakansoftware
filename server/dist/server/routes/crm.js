@@ -7,15 +7,21 @@ const zod_1 = require("zod");
 const client_1 = require("../db/client");
 const schema_1 = require("../db/schema");
 const http_1 = require("../lib/http");
+const auth_1 = require("../middleware/auth");
 const validate_1 = require("../middleware/validate");
 function crudRoutes(app, base, table, schema, searchColumn) {
     app.get(base, async (c) => {
         const search = c.req.query('search');
-        const items = await client_1.db
-            .select()
-            .from(table)
-            .where(search && searchColumn ? (0, drizzle_orm_1.ilike)(searchColumn, `%${search}%`) : undefined);
-        return (0, http_1.ok)(c, items);
+        const page = Math.max(1, Number(c.req.query('page') ?? 1));
+        const limit = Math.min(100, Number(c.req.query('limit') ?? 50));
+        const offset = (page - 1) * limit;
+        const whereClause = search && searchColumn ? (0, drizzle_orm_1.ilike)(searchColumn, `%${search}%`) : undefined;
+        const [items, countResult] = await Promise.all([
+            client_1.db.select().from(table).where(whereClause).limit(limit).offset(offset),
+            client_1.db.select({ count: (0, drizzle_orm_1.sql) `count(*)` }).from(table).where(whereClause),
+        ]);
+        const total = Number(countResult[0]?.count ?? 0);
+        return (0, http_1.ok)(c, items, { total, page, limit, pages: Math.ceil(total / limit) });
     });
     app.post(base, (0, validate_1.validate)(schema), async (c) => {
         const body = c.get('validatedBody');
@@ -146,7 +152,7 @@ exports.crmRoutes.patch('/tasks/:id/toggle', async (c) => {
         .where((0, drizzle_orm_1.eq)(schema_1.tasks.id, id));
     return (0, http_1.ok)(c, { id, done: !task?.done });
 });
-exports.crmRoutes.delete('/tasks/:id', async (c) => {
+exports.crmRoutes.delete('/tasks/:id', (0, auth_1.requireRole)('admin', 'manager'), async (c) => {
     const id = c.req.param('id');
     await client_1.db.delete(schema_1.tasks).where((0, drizzle_orm_1.eq)(schema_1.tasks.id, id));
     return (0, http_1.ok)(c, { id });

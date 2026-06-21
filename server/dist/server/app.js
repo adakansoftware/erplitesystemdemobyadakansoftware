@@ -16,6 +16,7 @@ const quotations_1 = require("./routes/quotations");
 const reports_1 = require("./routes/reports");
 const settings_1 = require("./routes/settings");
 const stock_1 = require("./routes/stock");
+const users_1 = require("./routes/users");
 exports.app = new hono_1.Hono().basePath('/api');
 const appOrigin = process.env.APP_ORIGIN ?? 'http://localhost:3000';
 exports.app.use('*', (0, cors_1.cors)({
@@ -37,6 +38,7 @@ exports.app.route('/crm', crm_1.crmRoutes);
 exports.app.route('/stock', stock_1.stockRoutes);
 exports.app.route('/settings', settings_1.settingsRoutes);
 exports.app.route('/reports', reports_1.reportsRoutes);
+exports.app.route('/users', users_1.usersRoutes);
 exports.app.notFound((c) => c.json({ error: 'Not found' }, 404));
 exports.app.onError((error, c) => {
     console.error(error);

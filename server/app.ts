@@ -13,6 +13,7 @@ import { quotationsRoutes } from './routes/quotations'
 import { reportsRoutes } from './routes/reports'
 import { settingsRoutes } from './routes/settings'
 import { stockRoutes } from './routes/stock'
+import { usersRoutes } from './routes/users'
 
 export const app = new Hono().basePath('/api')
 
@@ -42,6 +43,7 @@ app.route('/crm', crmRoutes)
 app.route('/stock', stockRoutes)
 app.route('/settings', settingsRoutes)
 app.route('/reports', reportsRoutes)
+app.route('/users', usersRoutes)
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404))
 

@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, ilike } from 'drizzle-orm'
+import { and, eq, ilike, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { invoiceLines, invoices } from '../db/schema'
@@ -11,6 +11,7 @@ import {
   getProductStock,
 } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
+import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
 
 const lineSchema = z.object({
@@ -37,15 +38,26 @@ export const invoicesRoutes = new Hono()
 invoicesRoutes.get('/', async (c) => {
   const status = c.req.query('status')
   const search = c.req.query('search')
+  const page = Math.max(1, Number(c.req.query('page') ?? 1))
+  const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
+  const offset = (page - 1) * limit
   const filters = [
     status ? eq(invoices.status, status) : undefined,
     search ? ilike(invoices.customer, `%${search}%`) : undefined,
   ].filter(Boolean)
-  const items = await db
-    .select()
-    .from(invoices)
-    .where(filters.length ? and(...filters) : undefined)
-  const lines = await db.select().from(invoiceLines)
+  const [items, lines, countResult] = await Promise.all([
+    db
+      .select()
+      .from(invoices)
+      .where(filters.length ? and(...filters) : undefined)
+      .limit(limit)
+      .offset(offset),
+    db.select().from(invoiceLines),
+    db
+      .select({ count: sql<string>`count(*)` })
+      .from(invoices)
+      .where(filters.length ? and(...filters) : undefined),
+  ])
   const now = new Date().toISOString().slice(0, 10)
   const normalized = items.map((item) => ({
     ...item,
@@ -62,7 +74,8 @@ invoicesRoutes.get('/', async (c) => {
         taxRate: Number(line.taxRate),
       })),
   }))
-  return ok(c, normalized)
+  const total = Number(countResult[0]?.count ?? 0)
+  return ok(c, normalized, { total, page, limit, pages: Math.ceil(total / limit) })
 })
 
 invoicesRoutes.get('/:id', async (c) => {
@@ -209,7 +222,7 @@ invoicesRoutes.put('/:id', validate(invoiceSchema), async (c) => {
   return ok(c, { id })
 })
 
-invoicesRoutes.delete('/:id', async (c) => {
+invoicesRoutes.delete('/:id', requireRole('admin', 'manager'), async (c) => {
   const id = c.req.param('id')
   const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id))
   if (invoice?.status !== 'draft') {

@@ -3,13 +3,26 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import {
+  ArrowLeftRight,
   ArrowUpRight,
+  BarChart3,
   Boxes,
   FileText,
   Receipt,
   TrendingUp,
   Wallet,
 } from 'lucide-react'
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import { RevenueChart } from '@/components/dashboard/revenue-chart'
 import { CategorySalesChart } from '@/components/dashboard/category-sales-chart'
 import { PageHeader } from '@/components/shared/page-header'
@@ -18,6 +31,23 @@ import { MetricGrid, SectionCard } from '@/components/shared/module-primitives'
 import { SearchInput } from '@/components/shared/search-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Field, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Card,
   CardAction,
@@ -36,11 +66,18 @@ import {
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useErpCollections } from '@/hooks/use-erp-store'
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart'
 import { movementMeta } from '@/lib/data/inventory'
 import { getStockStatus, productStatusMeta } from '@/lib/data/products'
 import { invoiceStatusMeta, invoiceTotals } from '@/lib/data/invoices'
 import { quotationStatusMeta, quotationTotals } from '@/lib/data/quotations'
 import { formatCurrency, formatDate, formatNumber } from '@/lib/ui-meta'
+import { toast } from 'sonner'
 
 function normalize(value: string) {
   return value
@@ -243,10 +280,18 @@ export function DashboardPageClient() {
 }
 
 export function StockPageClient() {
-  const { products, stockMovements, warehouses } = useErpCollections()
+  const { addStockMovement, products, stockMovements, warehouses } = useErpCollections()
   const [query, setQuery] = useState('')
   const [stockTab, setStockTab] = useState('all')
   const [movementTab, setMovementTab] = useState('all')
+  const [transferOpen, setTransferOpen] = useState(false)
+  const [transferForm, setTransferForm] = useState({
+    productId: '',
+    fromWarehouse: '',
+    toWarehouse: '',
+    qty: '0',
+    note: '',
+  })
 
   const normalizedQuery = normalize(query)
   const totalCapacity = warehouses.reduce((sum, item) => sum + item.capacity, 0)
@@ -318,7 +363,12 @@ export function StockPageClient() {
       <PageHeader
         title="Stok"
         description="Depolar, doluluk oranlari ve son stok hareketleri ayni ekranda izlenir."
-      />
+      >
+        <Button variant="outline" onClick={() => setTransferOpen(true)}>
+          <ArrowLeftRight data-icon="inline-start" />
+          Depo Transferi
+        </Button>
+      </PageHeader>
 
       <MetricGrid
         items={[
@@ -508,12 +558,171 @@ export function StockPageClient() {
           </TableBody>
         </Table>
       </SectionCard>
+
+      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Depo Transferi</DialogTitle>
+            <DialogDescription>
+              Kaynak depodan hedef depoya stok hareketi olusturun.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Field>
+              <FieldLabel>Urun</FieldLabel>
+              <Select
+                value={transferForm.productId}
+                onValueChange={(value) =>
+                  setTransferForm((current) => ({ ...current, productId: value ?? '' }))
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {products.map((product) => (
+                    <SelectItem key={product.id} value={product.id}>
+                      {product.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field>
+                <FieldLabel>Kaynak Depo</FieldLabel>
+                <Select
+                  value={transferForm.fromWarehouse}
+                  onValueChange={(value) =>
+                    setTransferForm((current) => ({ ...current, fromWarehouse: value ?? '' }))
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warehouses.map((warehouse) => (
+                      <SelectItem key={warehouse.id} value={warehouse.id}>
+                        {warehouse.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel>Hedef Depo</FieldLabel>
+                <Select
+                  value={transferForm.toWarehouse}
+                  onValueChange={(value) =>
+                    setTransferForm((current) => ({ ...current, toWarehouse: value ?? '' }))
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warehouses.map((warehouse) => (
+                      <SelectItem key={warehouse.id} value={warehouse.id}>
+                        {warehouse.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+            <Field>
+              <FieldLabel>Miktar</FieldLabel>
+              <Input
+                value={transferForm.qty}
+                onChange={(event) =>
+                  setTransferForm((current) => ({ ...current, qty: event.target.value }))
+                }
+              />
+            </Field>
+            <Field>
+              <FieldLabel>Not</FieldLabel>
+              <Input
+                value={transferForm.note}
+                onChange={(event) =>
+                  setTransferForm((current) => ({ ...current, note: event.target.value }))
+                }
+              />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={async () => {
+                if (
+                  !transferForm.productId ||
+                  !transferForm.fromWarehouse ||
+                  !transferForm.toWarehouse
+                ) {
+                  toast.error('Transfer alanlarini doldurun')
+                  return
+                }
+
+                if (transferForm.fromWarehouse === transferForm.toWarehouse) {
+                  toast.error('Kaynak ve hedef depo farkli olmali')
+                  return
+                }
+
+                const qty = Number(transferForm.qty || 0)
+                if (!Number.isFinite(qty) || qty <= 0) {
+                  toast.error('Gecerli bir miktar girin')
+                  return
+                }
+
+                const selectedProduct = products.find(
+                  (product) => product.id === transferForm.productId,
+                )
+                const fromWarehouse = warehouses.find(
+                  (warehouse) => warehouse.id === transferForm.fromWarehouse,
+                )
+                const toWarehouse = warehouses.find(
+                  (warehouse) => warehouse.id === transferForm.toWarehouse,
+                )
+
+                await addStockMovement({
+                  productId: transferForm.productId,
+                  warehouseId: transferForm.fromWarehouse,
+                  warehouse: fromWarehouse?.name,
+                  type: 'out',
+                  qty,
+                  note: `Transfer: ${transferForm.note}`,
+                  product: selectedProduct?.name,
+                })
+                await addStockMovement({
+                  productId: transferForm.productId,
+                  warehouseId: transferForm.toWarehouse,
+                  warehouse: toWarehouse?.name,
+                  type: 'in',
+                  qty,
+                  note: `Transfer: ${transferForm.note}`,
+                  product: selectedProduct?.name,
+                })
+
+                toast.success('Transfer kaydedildi')
+                setTransferOpen(false)
+                setTransferForm({
+                  productId: '',
+                  fromWarehouse: '',
+                  toWarehouse: '',
+                  qty: '0',
+                  note: '',
+                })
+              }}
+            >
+              Transferi Kaydet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
 
 export function ReportsPageClient() {
-  const { invoices, products, quotations, warehouses } = useErpCollections()
+  const { deals, invoices, leads, products, quotations, transactions, warehouses } = useErpCollections()
   const [reportTab, setReportTab] = useState('summary')
 
   const monthlyRevenue = invoices
@@ -549,6 +758,91 @@ export function ReportsPageClient() {
     }, {}),
   )
 
+  const monthlySalesData = useMemo(() => {
+    const monthMap = new Map<string, number>()
+    for (let index = 5; index >= 0; index -= 1) {
+      const date = new Date()
+      date.setMonth(date.getMonth() - index)
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+      monthMap.set(key, 0)
+    }
+
+    invoices.forEach((invoice) => {
+      const monthKey = invoice.issueDate.slice(0, 7)
+      if (monthMap.has(monthKey)) {
+        monthMap.set(
+          monthKey,
+          (monthMap.get(monthKey) ?? 0) + invoiceTotals(invoice.lines).total,
+        )
+      }
+    })
+
+    return Array.from(monthMap.entries()).map(([month, total]) => ({
+      month: month.slice(5).replace('-', '/'),
+      ciro: Number(total.toFixed(2)),
+    }))
+  }, [invoices])
+
+  const cashflowData = useMemo(() => {
+    const grouped = transactions.reduce<Record<string, { gelir: number; gider: number }>>(
+      (accumulator, transaction) => {
+        const key = transaction.date
+        accumulator[key] ??= { gelir: 0, gider: 0 }
+        if (transaction.type === 'income') {
+          accumulator[key].gelir += transaction.amount
+        } else {
+          accumulator[key].gider += transaction.amount
+        }
+        return accumulator
+      },
+      {},
+    )
+
+    return Object.entries(grouped)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-10)
+      .map(([date, totals]) => ({
+        date: date.slice(5),
+        gelir: totals.gelir,
+        gider: totals.gider,
+      }))
+  }, [transactions])
+
+  const crmFunnelData = useMemo(() => {
+    const qualified = leads.filter((lead) => lead.status === 'qualified').length
+    const activeDeals = deals.filter((deal) => !['lost'].includes(deal.stage)).length
+    const wonDeals = deals.filter((deal) => deal.stage === 'won').length
+
+    return [
+      { stage: 'Lead', count: leads.length },
+      { stage: 'Qualified', count: qualified },
+      { stage: 'Deal', count: activeDeals },
+      { stage: 'Won', count: wonDeals },
+    ]
+  }, [deals, leads])
+
+  const totalIncome = transactions
+    .filter((transaction) => transaction.type === 'income')
+    .reduce((sum, transaction) => sum + transaction.amount, 0)
+  const totalExpense = transactions
+    .filter((transaction) => transaction.type === 'expense')
+    .reduce((sum, transaction) => sum + transaction.amount, 0)
+  const netCashPosition = totalIncome - totalExpense
+  const crmConversionRate = leads.length ? (crmFunnelData[3].count / leads.length) * 100 : 0
+
+  const salesChartConfig = {
+    ciro: { label: 'Ciro', color: 'var(--chart-1)' },
+  } satisfies ChartConfig
+
+  const cashflowChartConfig = {
+    gelir: { label: 'Gelir', color: 'var(--chart-2)' },
+    gider: { label: 'Gider', color: 'var(--chart-3)' },
+  } satisfies ChartConfig
+
+  const crmChartConfig = {
+    count: { label: 'Kayit', color: 'var(--chart-4)' },
+  } satisfies ChartConfig
+
   return (
     <>
       <PageHeader
@@ -575,10 +869,39 @@ export function ReportsPageClient() {
           <TabsTrigger value="summary">Yonetici Ozeti</TabsTrigger>
           <TabsTrigger value="sales">Satis Belgeleri</TabsTrigger>
           <TabsTrigger value="stock">Stok Sagligi</TabsTrigger>
+          <TabsTrigger value="cashflow">Nakit Akisi</TabsTrigger>
+          <TabsTrigger value="crm">CRM Ozeti</TabsTrigger>
         </TabsList>
 
         <TabsContent value="summary">
           <div className="grid gap-4 xl:grid-cols-3">
+            <SectionCard
+              title="Aylik Ciro Trendi"
+              description="Son 6 ayin satis hacmi"
+              className="xl:col-span-3"
+            >
+              <ChartContainer config={salesChartConfig} className="h-[280px] w-full">
+                <AreaChart data={monthlySalesData} margin={{ top: 8, right: 8, left: 8 }}>
+                  <defs>
+                    <linearGradient id="fillSummaryCiro" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-ciro)" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="var(--color-ciro)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tickLine={false} axisLine={false} />
+                  <YAxis tickLine={false} axisLine={false} width={56} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Area
+                    dataKey="ciro"
+                    type="monotone"
+                    stroke="var(--color-ciro)"
+                    fill="url(#fillSummaryCiro)"
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ChartContainer>
+            </SectionCard>
             <SectionCard
               title="Fatura Durum Dagilimi"
               description="Duruma gore belge sayilari"
@@ -790,6 +1113,72 @@ export function ReportsPageClient() {
               })}
             </SectionCard>
           </div>
+        </TabsContent>
+        <TabsContent value="cashflow">
+          <MetricGrid
+            items={[
+              { label: 'Toplam Gelir', value: formatCurrency(totalIncome) },
+              { label: 'Toplam Gider', value: formatCurrency(totalExpense) },
+              { label: 'Net Pozisyon', value: formatCurrency(netCashPosition) },
+            ]}
+          />
+          <SectionCard
+            title="Gunluk Nakit Akisi"
+            description="Gelir ve gider hareketlerinin son 10 gunluk trendi"
+          >
+            <ChartContainer config={cashflowChartConfig} className="h-[300px] w-full">
+              <LineChart data={cashflowData} margin={{ top: 8, right: 8, left: 8 }}>
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis dataKey="date" tickLine={false} axisLine={false} />
+                <YAxis tickLine={false} axisLine={false} width={56} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Line
+                  dataKey="gelir"
+                  type="monotone"
+                  stroke="var(--color-gelir)"
+                  strokeWidth={2}
+                  dot={false}
+                />
+                <Line
+                  dataKey="gider"
+                  type="monotone"
+                  stroke="var(--color-gider)"
+                  strokeWidth={2}
+                  dot={false}
+                />
+              </LineChart>
+            </ChartContainer>
+          </SectionCard>
+        </TabsContent>
+        <TabsContent value="crm">
+          <MetricGrid
+            items={[
+              { label: 'Toplam Lead', value: formatNumber(leads.length) },
+              { label: 'Toplam Deal', value: formatNumber(deals.length) },
+              {
+                label: 'Donusum Orani',
+                value: `%${crmConversionRate.toFixed(1)}`,
+              },
+            ]}
+          />
+          <SectionCard
+            title="CRM Hunisi"
+            description="Lead'den kazanilan anlasmaya giden akis"
+          >
+            <ChartContainer config={crmChartConfig} className="h-[300px] w-full">
+              <BarChart data={crmFunnelData} margin={{ top: 8, right: 8, left: 8 }}>
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis dataKey="stage" tickLine={false} axisLine={false} />
+                <YAxis tickLine={false} axisLine={false} width={48} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar
+                  dataKey="count"
+                  fill="var(--color-count)"
+                  radius={[8, 8, 0, 0]}
+                />
+              </BarChart>
+            </ChartContainer>
+          </SectionCard>
         </TabsContent>
       </Tabs>
     </>

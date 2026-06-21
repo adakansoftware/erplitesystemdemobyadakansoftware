@@ -15,11 +15,15 @@ const loginSchema = zod_1.z.object({
     email: zod_1.z.string().email(),
     password: zod_1.z.string().min(6),
 });
+const passwordSchema = zod_1.z.object({
+    currentPassword: zod_1.z.string().min(6),
+    newPassword: zod_1.z.string().min(6),
+});
 exports.authRoutes = new hono_1.Hono();
 exports.authRoutes.post('/login', (0, validate_1.validate)(loginSchema), async (c) => {
     const body = c.get('validatedBody');
     const [user] = await client_1.db.select().from(schema_1.users).where((0, drizzle_orm_1.eq)(schema_1.users.email, body.email));
-    if (!user || !(0, auth_1.verifyPassword)(body.password, user.passwordHash)) {
+    if (!user || !user.active || !(0, auth_1.verifyPassword)(body.password, user.passwordHash)) {
         return (0, http_1.fail)(c, 401, 'Invalid email or password');
     }
     const token = await (0, auth_1.signToken)({
@@ -52,4 +56,20 @@ exports.authRoutes.post('/logout', async (c) => {
 exports.authRoutes.get('/me', auth_2.authMiddleware, async (c) => {
     const user = c.get('user');
     return (0, http_1.ok)(c, user);
+});
+exports.authRoutes.patch('/password', auth_2.authMiddleware, (0, validate_1.validate)(passwordSchema), async (c) => {
+    const body = c.get('validatedBody');
+    const sessionUser = c.get('user');
+    if (!sessionUser?.id) {
+        return (0, http_1.fail)(c, 401, 'Unauthorized');
+    }
+    const [user] = await client_1.db.select().from(schema_1.users).where((0, drizzle_orm_1.eq)(schema_1.users.id, sessionUser.id));
+    if (!user || !(0, auth_1.verifyPassword)(body.currentPassword, user.passwordHash)) {
+        return (0, http_1.fail)(c, 401, 'Current password is incorrect');
+    }
+    await client_1.db
+        .update(schema_1.users)
+        .set({ passwordHash: (0, auth_1.hashPassword)(body.newPassword), updatedAt: new Date() })
+        .where((0, drizzle_orm_1.eq)(schema_1.users.id, sessionUser.id));
+    return (0, http_1.ok)(c, { ok: true });
 });

@@ -7,7 +7,7 @@ export type DemoUser = {
   id: string
   name: string
   email: string
-  role: 'admin' | 'sales'
+  role: 'admin' | 'manager' | 'sales'
   initials: string
 }
 
@@ -21,11 +21,18 @@ function toInitials(name: string) {
 }
 
 function mapUser(payload: any): DemoUser {
+  const role =
+    payload.role === 'manager'
+      ? 'manager'
+      : payload.role === 'sales'
+        ? 'sales'
+        : 'admin'
+
   return {
     id: payload.id ?? '',
     name: payload.name ?? 'Demo Kullanici',
     email: payload.email ?? 'admin@demo.com',
-    role: payload.role === 'sales' ? 'sales' : 'admin',
+    role,
     initials: toInitials(payload.name ?? 'Demo Kullanici'),
   }
 }
@@ -99,6 +106,8 @@ export function useAuth() {
       currentUser: state.currentUser,
       isReady: state.isReady,
       isAuthenticated: Boolean(state.currentUser),
+      isAdmin: state.currentUser?.role === 'admin',
+      isManager: ['admin', 'manager'].includes(state.currentUser?.role ?? ''),
       login: async (email: string, password: string) => {
         try {
           const result = await api.post<any>('/auth/login', { email, password })

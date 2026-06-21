@@ -50,6 +50,9 @@ productsRoutes.get('/', async (c) => {
   const search = c.req.query('search')
   const category = c.req.query('category')
   const status = c.req.query('status')
+  const page = Math.max(1, Number(c.req.query('page') ?? 1))
+  const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
+  const offset = (page - 1) * limit
 
   const filters = [
     search
@@ -59,14 +62,23 @@ productsRoutes.get('/', async (c) => {
     status ? eq(products.status, status) : undefined,
   ].filter(Boolean)
 
-  const result = await db
-    .select()
-    .from(products)
-    .where(filters.length ? and(...filters) : undefined)
+  const [result, countResult] = await Promise.all([
+    db
+      .select()
+      .from(products)
+      .where(filters.length ? and(...filters) : undefined)
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ count: sql<string>`count(*)` })
+      .from(products)
+      .where(filters.length ? and(...filters) : undefined),
+  ])
 
   const categories = await db.select().from(productCategories)
   const categoryMap = new Map(categories.map((category) => [category.id, category.name]))
   const withStocks = await attachProductStocks(result)
+  const total = Number(countResult[0]?.count ?? 0)
 
   return ok(
     c,
@@ -76,6 +88,7 @@ productsRoutes.get('/', async (c) => {
       stock: item.totalStock,
       supplierPrice: Number(item.costPrice ?? 0),
     })),
+    { total, page, limit, pages: Math.ceil(total / limit) },
   )
 })
 

@@ -396,7 +396,15 @@ async function requestCollection<T>(
   promise: Promise<T>,
 ): Promise<CollectionResult<T>> {
   try {
-    return { ok: true, data: await promise }
+    const resolved = await promise
+    const data =
+      resolved &&
+      typeof resolved === 'object' &&
+      'data' in (resolved as Record<string, unknown>)
+        ? ((resolved as unknown as { data: T }).data as T)
+        : resolved
+
+    return { ok: true, data }
   } catch (error) {
     return {
       ok: false,

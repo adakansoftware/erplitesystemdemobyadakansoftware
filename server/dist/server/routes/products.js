@@ -45,6 +45,9 @@ exports.productsRoutes.get('/', async (c) => {
     const search = c.req.query('search');
     const category = c.req.query('category');
     const status = c.req.query('status');
+    const page = Math.max(1, Number(c.req.query('page') ?? 1));
+    const limit = Math.min(100, Number(c.req.query('limit') ?? 50));
+    const offset = (page - 1) * limit;
     const filters = [
         search
             ? (0, drizzle_orm_1.or)((0, drizzle_orm_1.ilike)(schema_1.products.name, `%${search}%`), (0, drizzle_orm_1.ilike)(schema_1.products.sku, `%${search}%`))
@@ -52,19 +55,28 @@ exports.productsRoutes.get('/', async (c) => {
         category ? (0, drizzle_orm_1.eq)(schema_1.products.categoryId, category) : undefined,
         status ? (0, drizzle_orm_1.eq)(schema_1.products.status, status) : undefined,
     ].filter(Boolean);
-    const result = await client_1.db
-        .select()
-        .from(schema_1.products)
-        .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined);
+    const [result, countResult] = await Promise.all([
+        client_1.db
+            .select()
+            .from(schema_1.products)
+            .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined)
+            .limit(limit)
+            .offset(offset),
+        client_1.db
+            .select({ count: (0, drizzle_orm_1.sql) `count(*)` })
+            .from(schema_1.products)
+            .where(filters.length ? (0, drizzle_orm_1.and)(...filters) : undefined),
+    ]);
     const categories = await client_1.db.select().from(schema_1.productCategories);
     const categoryMap = new Map(categories.map((category) => [category.id, category.name]));
     const withStocks = await (0, rules_1.attachProductStocks)(result);
+    const total = Number(countResult[0]?.count ?? 0);
     return (0, http_1.ok)(c, withStocks.map((item) => ({
         ...item,
         category: item.categoryId ? categoryMap.get(item.categoryId) ?? '' : '',
         stock: item.totalStock,
         supplierPrice: Number(item.costPrice ?? 0),
-    })));
+    })), { total, page, limit, pages: Math.ceil(total / limit) });
 });
 exports.productsRoutes.get('/low-stock', async (c) => {
     const result = await client_1.db.select().from(schema_1.products);
