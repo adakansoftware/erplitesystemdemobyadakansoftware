@@ -17,7 +17,13 @@ const reports_1 = require("./routes/reports");
 const settings_1 = require("./routes/settings");
 const stock_1 = require("./routes/stock");
 exports.app = new hono_1.Hono().basePath('/api');
-exports.app.use('*', (0, cors_1.cors)({ origin: 'http://localhost:3000', credentials: true }));
+const appOrigin = process.env.APP_ORIGIN ?? 'http://localhost:3000';
+exports.app.use('*', (0, cors_1.cors)({
+    origin: appOrigin,
+    credentials: true,
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+}));
 exports.app.use('*', (0, logger_1.logger)());
 exports.app.route('/auth', auth_2.authRoutes);
 exports.app.use('*', auth_1.authMiddleware);
@@ -31,3 +37,8 @@ exports.app.route('/crm', crm_1.crmRoutes);
 exports.app.route('/stock', stock_1.stockRoutes);
 exports.app.route('/settings', settings_1.settingsRoutes);
 exports.app.route('/reports', reports_1.reportsRoutes);
+exports.app.notFound((c) => c.json({ error: 'Not found' }, 404));
+exports.app.onError((error, c) => {
+    console.error(error);
+    return c.json({ error: 'Internal server error' }, 500);
+});

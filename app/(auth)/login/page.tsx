@@ -98,8 +98,8 @@ export default function LoginPage() {
               <FieldLabel>Demo Hesaplar</FieldLabel>
               <FieldContent>
                 <div className="space-y-2 rounded-lg border p-3 text-sm">
-                  <p>`admin@demo.com / demo123`</p>
-                  <p>`satis@demo.com / demo123`</p>
+                  <p>admin@demo.com / demo123</p>
+                  <p>satis@demo.com / demo123</p>
                 </div>
                 <FieldDescription>
                   Giris sonrasinda uygulama paneline dogrudan yonlendirilirsiniz.

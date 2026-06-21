@@ -32,7 +32,15 @@ export function hashPassword(password: string) {
 
 export function verifyPassword(password: string, stored: string) {
   const [salt, hash] = stored.split(':')
+  if (!salt || !hash) {
+    return false
+  }
+
   const nextHash = pbkdf2Sync(password, salt, 100000, 64, 'sha512')
   const storedHash = Buffer.from(hash, 'hex')
+  if (storedHash.length !== nextHash.length) {
+    return false
+  }
+
   return timingSafeEqual(nextHash, storedHash)
 }

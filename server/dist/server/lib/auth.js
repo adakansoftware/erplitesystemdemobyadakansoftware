@@ -32,7 +32,13 @@ function hashPassword(password) {
 }
 function verifyPassword(password, stored) {
     const [salt, hash] = stored.split(':');
+    if (!salt || !hash) {
+        return false;
+    }
     const nextHash = (0, node_crypto_1.pbkdf2Sync)(password, salt, 100000, 64, 'sha512');
     const storedHash = Buffer.from(hash, 'hex');
+    if (storedHash.length !== nextHash.length) {
+        return false;
+    }
     return (0, node_crypto_1.timingSafeEqual)(nextHash, storedHash);
 }

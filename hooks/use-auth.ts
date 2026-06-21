@@ -30,46 +30,80 @@ function mapUser(payload: any): DemoUser {
   }
 }
 
+type AuthState = {
+  currentUser: DemoUser | null
+  isReady: boolean
+}
+
+let authState: AuthState = {
+  currentUser: null,
+  isReady: false,
+}
+
+let pendingSessionRequest: Promise<void> | null = null
+const authListeners = new Set<(state: AuthState) => void>()
+
+function emitAuth(nextState: AuthState) {
+  authState = nextState
+  authListeners.forEach((listener) => listener(authState))
+}
+
+function subscribeAuth(listener: (state: AuthState) => void) {
+  authListeners.add(listener)
+  return () => {
+    authListeners.delete(listener)
+  }
+}
+
+async function refreshSession() {
+  if (pendingSessionRequest) {
+    return pendingSessionRequest
+  }
+
+  pendingSessionRequest = api
+    .get<any>('/auth/me')
+    .then((user) => {
+      emitAuth({
+        currentUser: mapUser(user),
+        isReady: true,
+      })
+    })
+    .catch(() => {
+      emitAuth({
+        currentUser: null,
+        isReady: true,
+      })
+    })
+    .finally(() => {
+      pendingSessionRequest = null
+    })
+
+  return pendingSessionRequest
+}
+
 export function useAuth() {
-  const [currentUser, setCurrentUser] = useState<DemoUser | null>(null)
-  const [isReady, setIsReady] = useState(false)
+  const [state, setState] = useState(authState)
 
   useEffect(() => {
-    let cancelled = false
+    const unsubscribe = subscribeAuth(setState)
 
-    void api
-      .get<any>('/auth/me')
-      .then((user) => {
-        if (!cancelled) {
-          setCurrentUser(mapUser(user))
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCurrentUser(null)
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsReady(true)
-        }
-      })
-
-    return () => {
-      cancelled = true
+    if (!authState.isReady && !pendingSessionRequest) {
+      void refreshSession()
     }
+
+    return unsubscribe
   }, [])
 
   return useMemo(
     () => ({
-      currentUser,
-      isReady,
-      isAuthenticated: Boolean(currentUser),
+      currentUser: state.currentUser,
+      isReady: state.isReady,
+      isAuthenticated: Boolean(state.currentUser),
       login: async (email: string, password: string) => {
         try {
           const result = await api.post<any>('/auth/login', { email, password })
           const user = mapUser(result.user)
-          setCurrentUser(user)
+          emitAuth({ currentUser: user, isReady: true })
           return { ok: true as const, user }
         } catch (error) {
           return {
@@ -83,10 +117,10 @@ export function useAuth() {
         try {
           await api.post('/auth/logout', {})
         } finally {
-          setCurrentUser(null)
+          emitAuth({ currentUser: null, isReady: true })
         }
       },
     }),
-    [currentUser, isReady],
+    [state.currentUser, state.isReady],
   )
 }

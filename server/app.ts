@@ -16,7 +16,17 @@ import { stockRoutes } from './routes/stock'
 
 export const app = new Hono().basePath('/api')
 
-app.use('*', cors({ origin: 'http://localhost:3000', credentials: true }))
+const appOrigin = process.env.APP_ORIGIN ?? 'http://localhost:3000'
+
+app.use(
+  '*',
+  cors({
+    origin: appOrigin,
+    credentials: true,
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+  }),
+)
 app.use('*', logger())
 
 app.route('/auth', authRoutes)
@@ -32,3 +42,10 @@ app.route('/crm', crmRoutes)
 app.route('/stock', stockRoutes)
 app.route('/settings', settingsRoutes)
 app.route('/reports', reportsRoutes)
+
+app.notFound((c) => c.json({ error: 'Not found' }, 404))
+
+app.onError((error, c) => {
+  console.error(error)
+  return c.json({ error: 'Internal server error' }, 500)
+})
