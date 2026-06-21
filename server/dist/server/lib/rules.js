@@ -38,6 +38,9 @@ async function ensureStockAvailable(lines) {
     return { ok: true };
 }
 async function createStockOutForInvoice(invoiceId, userId) {
+    await client_1.db
+        .delete(schema_1.stockMovements)
+        .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.stockMovements.relatedDocType, 'invoice'), (0, drizzle_orm_1.eq)(schema_1.stockMovements.relatedDocId, invoiceId)));
     const lines = await client_1.db
         .select()
         .from(schema_1.invoiceLines)
@@ -60,6 +63,9 @@ async function createStockOutForInvoice(invoiceId, userId) {
     }
 }
 async function createStockInForPurchaseOrder(purchaseOrderId, userId) {
+    await client_1.db
+        .delete(schema_1.stockMovements)
+        .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.stockMovements.relatedDocType, 'purchase_order'), (0, drizzle_orm_1.eq)(schema_1.stockMovements.relatedDocId, purchaseOrderId)));
     const lines = await client_1.db
         .select()
         .from(schema_1.purchaseOrderLines)

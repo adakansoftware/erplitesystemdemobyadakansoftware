@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Building2, Wallet } from 'lucide-react'
 import { useAppSettings, type AppSettings } from '@/hooks/use-app-settings'
+import { useAuth } from '@/hooks/use-auth'
 import { useErpCollections } from '@/hooks/use-erp-store'
 import { PageHeader } from '@/components/shared/page-header'
 import { MetricGrid, SectionCard } from '@/components/shared/module-primitives'
@@ -986,7 +987,9 @@ export function TasksPageClient() {
 
 export function SettingsPageClient() {
   const { settings, updateSettings, isReady } = useAppSettings()
+  const { currentUser } = useAuth()
   const [form, setForm] = useState(settings)
+  const canManageSettings = currentUser?.role === 'admin'
 
   useEffect(() => {
     if (isReady) setForm(settings)
@@ -997,6 +1000,11 @@ export function SettingsPageClient() {
   }
 
   async function handleSave() {
+    if (!canManageSettings) {
+      toast.error('Bu alani sadece yonetici guncelleyebilir')
+      return
+    }
+
     await updateSettings(form)
     toast.success('Ayarlar kaydedildi')
   }
@@ -1006,8 +1014,23 @@ export function SettingsPageClient() {
       <PageHeader
         title="Ayarlar"
         description="Sistem genel ayarlari ve operasyon tercihleri."
-        actions={<Button onClick={() => void handleSave()}>Degisiklikleri Kaydet</Button>}
+        actions={
+          <Button onClick={() => void handleSave()} disabled={!canManageSettings}>
+            Degisiklikleri Kaydet
+          </Button>
+        }
       />
+
+      {!canManageSettings ? (
+        <SectionCard
+          title="Yetki Siniri"
+          description="Bu ekrandaki degisiklikler sadece admin rolundeki kullanicilar tarafindan kaydedilebilir."
+        >
+          <p className="text-sm text-muted-foreground">
+            Mevcut oturum yalnizca ayarlari goruntuleyebilir.
+          </p>
+        </SectionCard>
+      ) : null}
 
       <Tabs defaultValue="company">
         <TabsList>

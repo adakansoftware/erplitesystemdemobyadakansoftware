@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { db } from '../db/client'
 import { companySettings } from '../db/schema'
 import { ok } from '../lib/http'
+import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
 
 const settingsSchema = z.object({
@@ -26,7 +27,7 @@ settingsRoutes.get('/', async (c) => {
   return ok(c, row ?? null)
 })
 
-settingsRoutes.put('/', validate(settingsSchema), async (c) => {
+settingsRoutes.put('/', requireRole('admin'), validate(settingsSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof settingsSchema>
   await db
     .insert(companySettings)

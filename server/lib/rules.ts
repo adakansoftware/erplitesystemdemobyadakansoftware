@@ -45,6 +45,15 @@ export async function ensureStockAvailable(lines: Array<{ productId: string | nu
 }
 
 export async function createStockOutForInvoice(invoiceId: string, userId?: string) {
+  await db
+    .delete(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.relatedDocType, 'invoice'),
+        eq(stockMovements.relatedDocId, invoiceId),
+      ),
+    )
+
   const lines = await db
     .select()
     .from(invoiceLines)
@@ -72,6 +81,15 @@ export async function createStockInForPurchaseOrder(
   purchaseOrderId: string,
   userId?: string,
 ) {
+  await db
+    .delete(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.relatedDocType, 'purchase_order'),
+        eq(stockMovements.relatedDocId, purchaseOrderId),
+      ),
+    )
+
   const lines = await db
     .select()
     .from(purchaseOrderLines)

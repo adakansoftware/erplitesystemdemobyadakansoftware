@@ -229,10 +229,12 @@ export function Topbar() {
                   <User />
                   Profil
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => router.push('/ayarlar')}>
-                  <Settings />
-                  Ayarlar
-                </DropdownMenuItem>
+                {currentUser?.role === 'admin' ? (
+                  <DropdownMenuItem onClick={() => router.push('/ayarlar')}>
+                    <Settings />
+                    Ayarlar
+                  </DropdownMenuItem>
+                ) : null}
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onClick={() => void handleLogout()}>

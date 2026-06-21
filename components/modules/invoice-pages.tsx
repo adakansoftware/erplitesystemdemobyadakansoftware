@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Plus } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
@@ -345,9 +345,45 @@ export function NewInvoicePageClient() {
 
 export function InvoiceDetailPageClient() {
   const params = useParams<{ id: string }>()
-  const { getInvoiceById, hydrated } = useErpCollections()
+  const { getInvoiceById, hydrated, updateInvoice } = useErpCollections()
   const { settings } = useAppSettings()
   const invoice = getInvoiceById(params.id)
+  const [isEditing, setIsEditing] = useState(false)
+  const [form, setForm] = useState({
+    customer: '',
+    issueDate: '',
+    dueDate: '',
+    note: '',
+    line1Product: '',
+    line1Quantity: '0',
+    line1UnitPrice: '0',
+    line1TaxRate: '20',
+    line2Product: '',
+    line2Quantity: '0',
+    line2UnitPrice: '0',
+    line2TaxRate: '20',
+  })
+
+  useEffect(() => {
+    if (!invoice) {
+      return
+    }
+
+    setForm({
+      customer: invoice.customer,
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate,
+      note: invoice.note,
+      line1Product: invoice.lines[0]?.product ?? '',
+      line1Quantity: String(invoice.lines[0]?.quantity ?? 0),
+      line1UnitPrice: String(invoice.lines[0]?.unitPrice ?? 0),
+      line1TaxRate: String(invoice.lines[0]?.taxRate ?? 20),
+      line2Product: invoice.lines[1]?.product ?? '',
+      line2Quantity: String(invoice.lines[1]?.quantity ?? 0),
+      line2UnitPrice: String(invoice.lines[1]?.unitPrice ?? 0),
+      line2TaxRate: String(invoice.lines[1]?.taxRate ?? 20),
+    })
+  }, [invoice])
 
   if (hydrated && !invoice) {
     return (
@@ -364,8 +400,88 @@ export function InvoiceDetailPageClient() {
     return null
   }
 
-  const meta = invoiceStatusMeta[invoice.status]
-  const totals = invoiceTotals(invoice.lines)
+  const currentInvoice = invoice
+  const meta = invoiceStatusMeta[currentInvoice.status]
+  const totals = invoiceTotals(currentInvoice.lines)
+  const draftEditable = currentInvoice.status === 'draft'
+  const editTotals = invoiceTotals(
+    [
+      form.line1Product
+        ? {
+            product: form.line1Product,
+            quantity: Number(form.line1Quantity || 0),
+            unitPrice: Number(form.line1UnitPrice || 0),
+            taxRate: Number(form.line1TaxRate || 0),
+          }
+        : null,
+      form.line2Product
+        ? {
+            product: form.line2Product,
+            quantity: Number(form.line2Quantity || 0),
+            unitPrice: Number(form.line2UnitPrice || 0),
+            taxRate: Number(form.line2TaxRate || 0),
+          }
+        : null,
+    ].filter(Boolean) as Array<{
+      product: string
+      quantity: number
+      unitPrice: number
+      taxRate: number
+    }>,
+  )
+
+  function updateField<K extends keyof typeof form>(key: K, value: string) {
+    setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  async function handleSave() {
+    const lines = [
+      form.line1Product
+        ? {
+            product: form.line1Product,
+            quantity: Number(form.line1Quantity || 0),
+            unitPrice: Number(form.line1UnitPrice || 0),
+            taxRate: Number(form.line1TaxRate || 0),
+          }
+        : null,
+      form.line2Product
+        ? {
+            product: form.line2Product,
+            quantity: Number(form.line2Quantity || 0),
+            unitPrice: Number(form.line2UnitPrice || 0),
+            taxRate: Number(form.line2TaxRate || 0),
+          }
+        : null,
+    ].filter(Boolean) as Array<{
+      product: string
+      quantity: number
+      unitPrice: number
+      taxRate: number
+    }>
+
+    if (!lines.length) {
+      toast.error('En az bir fatura kalemi girin')
+      return
+    }
+
+    const updated = await updateInvoice(currentInvoice.id, {
+      customer: form.customer,
+      issueDate: form.issueDate,
+      dueDate: form.dueDate,
+      note: form.note,
+      status: 'draft',
+      relatedQuotation: currentInvoice.relatedQuotation,
+      lines,
+    })
+
+    if (!updated) {
+      toast.error('Fatura guncellenemedi')
+      return
+    }
+
+    toast.success('Fatura guncellendi')
+    setIsEditing(false)
+  }
 
   return (
     <>
@@ -392,10 +508,15 @@ export function InvoiceDetailPageClient() {
         </div>
       </div>
       <PageHeader
-        title={invoice.id}
-        description={`${invoice.customer} icin duzenlenen faturanin detay ekrani.`}
+        title={currentInvoice.id}
+        description={`${currentInvoice.customer} icin duzenlenen faturanin detay ekrani.`}
       >
         <Button variant="outline" render={<Link href="/faturalar">Listeye Don</Link>} />
+        {draftEditable ? (
+          <Button variant="outline" onClick={() => setIsEditing((current) => !current)}>
+            {isEditing ? 'Duzenlemeyi Kapat' : 'Duzenle'}
+          </Button>
+        ) : null}
         <Button variant="outline" onClick={() => window.print()}>
           Yazdir / PDF
         </Button>
@@ -404,18 +525,116 @@ export function InvoiceDetailPageClient() {
 
       <MetricGrid
         items={[
-          { label: 'Musteri', value: invoice.customer },
+          { label: 'Musteri', value: currentInvoice.customer },
           {
             label: 'Durum',
             value: meta.label,
             badge: 'Fatura',
             badgeVariant: meta.variant,
           },
-          { label: 'Vade Tarihi', value: formatDate(invoice.dueDate) },
+          { label: 'Vade Tarihi', value: formatDate(currentInvoice.dueDate) },
           { label: 'Toplam', value: formatCurrency(totals.total) },
         ]}
       />
 
+      {isEditing ? (
+        <div className="grid gap-4 xl:grid-cols-3">
+          <SectionCard
+            title="Fatura Bilgileri"
+            description="Taslak belgeyi guncelleyin"
+            contentClassName="space-y-4"
+          >
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="edit-invoice-customer">Musteri</FieldLabel>
+                <Input
+                  id="edit-invoice-customer"
+                  value={form.customer}
+                  onChange={(event) => updateField('customer', event.target.value)}
+                />
+              </Field>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Input
+                  value={form.issueDate}
+                  onChange={(event) => updateField('issueDate', event.target.value)}
+                />
+                <Input
+                  value={form.dueDate}
+                  onChange={(event) => updateField('dueDate', event.target.value)}
+                />
+              </div>
+            </FieldGroup>
+          </SectionCard>
+
+          <SectionCard
+            title="Kalemler"
+            description="Urun ve fiyat satirlari"
+            contentClassName="space-y-4"
+          >
+            {[
+              ['line1Product', 'line1Quantity', 'line1UnitPrice', 'line1TaxRate'],
+              ['line2Product', 'line2Quantity', 'line2UnitPrice', 'line2TaxRate'],
+            ].map(([productKey, quantityKey, priceKey, taxKey]) => (
+              <div key={productKey} className="space-y-3 rounded-lg border p-4">
+                <Input
+                  value={form[productKey as keyof typeof form]}
+                  onChange={(event) =>
+                    updateField(productKey as keyof typeof form, event.target.value)
+                  }
+                />
+                <div className="grid gap-3 md:grid-cols-3">
+                  <Input
+                    value={form[quantityKey as keyof typeof form]}
+                    onChange={(event) =>
+                      updateField(quantityKey as keyof typeof form, event.target.value)
+                    }
+                  />
+                  <Input
+                    value={form[priceKey as keyof typeof form]}
+                    onChange={(event) =>
+                      updateField(priceKey as keyof typeof form, event.target.value)
+                    }
+                  />
+                  <Input
+                    value={form[taxKey as keyof typeof form]}
+                    onChange={(event) =>
+                      updateField(taxKey as keyof typeof form, event.target.value)
+                    }
+                  />
+                </div>
+              </div>
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            title="Aciklama ve Ozet"
+            description="Belge notu ve toplamlar"
+            contentClassName="space-y-4"
+          >
+            <Textarea
+              value={form.note}
+              onChange={(event) => updateField('note', event.target.value)}
+            />
+            <div className="rounded-lg border p-4 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Ara Toplam</span>
+                <span className="font-medium">{formatCurrency(editTotals.subtotal)}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-muted-foreground">KDV</span>
+                <span className="font-medium">{formatCurrency(editTotals.tax)}</span>
+              </div>
+              <div className="mt-4 flex items-center justify-between border-t pt-4">
+                <span className="font-medium">Genel Toplam</span>
+                <span className="text-base font-semibold">{formatCurrency(editTotals.total)}</span>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={() => void handleSave()}>Taslagi Guncelle</Button>
+            </div>
+          </SectionCard>
+        </div>
+      ) : (
       <div className="grid gap-4 xl:grid-cols-3">
         <SectionCard
           title="Belge Ozeti"
@@ -424,18 +643,18 @@ export function InvoiceDetailPageClient() {
         >
           <DetailList
             items={[
-              { label: 'Fatura No', value: invoice.id },
-              { label: 'Musteri', value: invoice.customer },
-              { label: 'Duzenleme Tarihi', value: formatDate(invoice.issueDate) },
-              { label: 'Vade Tarihi', value: formatDate(invoice.dueDate) },
+              { label: 'Fatura No', value: currentInvoice.id },
+              { label: 'Musteri', value: currentInvoice.customer },
+              { label: 'Duzenleme Tarihi', value: formatDate(currentInvoice.issueDate) },
+              { label: 'Vade Tarihi', value: formatDate(currentInvoice.dueDate) },
               {
                 label: 'Kaynak Teklif',
-                value: invoice.relatedQuotation ? (
+                value: currentInvoice.relatedQuotation ? (
                   <Link
-                    href={`/teklifler/${invoice.relatedQuotation}`}
+                    href={`/teklifler/${currentInvoice.relatedQuotation}`}
                     className="hover:underline"
                   >
-                    {invoice.relatedQuotation}
+                    {currentInvoice.relatedQuotation}
                   </Link>
                 ) : (
                   'Bagimsiz belge'
@@ -445,7 +664,7 @@ export function InvoiceDetailPageClient() {
           />
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground">Aciklama</p>
-            <p className="mt-2 text-sm">{invoice.note || 'Aciklama girilmedi.'}</p>
+            <p className="mt-2 text-sm">{currentInvoice.note || 'Aciklama girilmedi.'}</p>
           </div>
         </SectionCard>
 
@@ -454,9 +673,9 @@ export function InvoiceDetailPageClient() {
           description="Fatura satirlari"
           contentClassName="space-y-3 xl:col-span-2"
         >
-          {invoice.lines.map((line) => (
+          {currentInvoice.lines.map((line) => (
             <div
-              key={`${invoice.id}-${line.product}`}
+              key={`${currentInvoice.id}-${line.product}`}
               className="rounded-lg border p-4"
             >
               <div className="flex items-start justify-between gap-3">
@@ -493,6 +712,7 @@ export function InvoiceDetailPageClient() {
           </div>
         </SectionCard>
       </div>
+      )}
     </>
   )
 }

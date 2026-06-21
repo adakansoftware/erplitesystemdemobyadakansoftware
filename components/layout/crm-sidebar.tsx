@@ -16,10 +16,22 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { useAuth } from '@/hooks/use-auth'
 import { navGroups } from '@/lib/nav'
 
 export function CrmSidebar() {
   const pathname = usePathname()
+  const { currentUser } = useAuth()
+  const visibleGroups = navGroups.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => {
+      if (item.href === '/ayarlar' && currentUser?.role !== 'admin') {
+        return false
+      }
+
+      return true
+    }),
+  }))
 
   return (
     <Sidebar>
@@ -39,7 +51,7 @@ export function CrmSidebar() {
         </Link>
       </SidebarHeader>
       <SidebarContent>
-        {navGroups.map((group) => (
+        {visibleGroups.map((group) => (
           <SidebarGroup key={group.label}>
             <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             <SidebarGroupContent>

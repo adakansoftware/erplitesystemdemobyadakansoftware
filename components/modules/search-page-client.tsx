@@ -19,6 +19,7 @@ const moduleOrder = [
   'urunler',
   'faturalar',
   'teklifler',
+  'satin-alma',
   'cari',
   'crm',
   'finans',
@@ -59,7 +60,7 @@ export function SearchPageClient() {
             {
               label: 'Belgeler',
               value: results.filter((item) =>
-                ['faturalar', 'teklifler'].includes(item.moduleKey),
+                ['faturalar', 'teklifler', 'satin-alma'].includes(item.moduleKey),
               ).length,
             },
             {

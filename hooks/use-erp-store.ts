@@ -268,10 +268,12 @@ function mapQuotation(item: any): Quotation {
 
 function mapPurchaseLine(line: any): PurchaseOrderLine {
   return {
+    id: line.id ?? undefined,
     product: line.product ?? '',
     qty: Number(line.qty ?? line.quantity ?? 0),
     unitPrice: Number(line.unitPrice ?? 0),
     taxRate: Number(line.taxRate ?? 0),
+    receivedQty: Number(line.receivedQty ?? 0),
   }
 }
 
@@ -769,6 +771,40 @@ async function createInvoiceAction(payload: {
   return storeState.invoices.find((invoice) => invoice.id === created.id)
 }
 
+async function updateInvoiceAction(
+  id: string,
+  payload: {
+    customer: string
+    issueDate: string
+    dueDate: string
+    note: string
+    status?: Invoice['status']
+    lines: InvoiceLine[]
+    relatedQuotation?: string
+  },
+) {
+  const account = storeState.currentAccounts.find((item) => item.name === payload.customer)
+  await api.put(`/invoices/${id}`, {
+    currentAccountId: account?.id,
+    customer: payload.customer,
+    issueDate: payload.issueDate,
+    dueDate: payload.dueDate,
+    note: payload.note,
+    status: payload.status ?? 'draft',
+    relatedQuotationId: payload.relatedQuotation,
+    lines: payload.lines.map((line) => ({
+      productId: productIdByName(storeState.products, line.product) || undefined,
+      product: line.product,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      taxRate: line.taxRate,
+    })),
+  })
+
+  await refreshStore()
+  return storeState.invoices.find((invoice) => invoice.id === id) ?? null
+}
+
 async function createPurchaseOrderAction(payload: {
   supplier: string
   orderDate: string
@@ -809,6 +845,15 @@ async function updatePurchaseOrderAction(
 
   await refreshStore()
   return storeState.purchases.find((purchase) => purchase.id === id)
+}
+
+async function receivePurchaseOrderAction(
+  id: string,
+  lines: Array<{ lineId: string; receivedQty: number }>,
+) {
+  await api.post(`/purchase-orders/${id}/receive`, { lines })
+  await refreshStore()
+  return storeState.purchases.find((purchase) => purchase.id === id) ?? null
 }
 
 async function createCurrentAccountAction(payload: Omit<CurrentAccount, 'id'>) {
@@ -965,10 +1010,12 @@ export function useErpCollections() {
       updateProduct: updateProductAction,
       addStockMovement: addStockMovementAction,
       createInvoice: createInvoiceAction,
+      updateInvoice: updateInvoiceAction,
       createQuotation: createQuotationAction,
       convertQuotationToInvoice: convertQuotationToInvoiceAction,
       createPurchaseOrder: createPurchaseOrderAction,
       updatePurchaseOrder: updatePurchaseOrderAction,
+      receivePurchaseOrder: receivePurchaseOrderAction,
       createCurrentAccount: createCurrentAccountAction,
       updateCurrentAccount: updateCurrentAccountAction,
       deleteCurrentAccount: deleteCurrentAccountAction,

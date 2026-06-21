@@ -19,10 +19,12 @@ export const purchaseStatusMeta: Record<
 }
 
 export type PurchaseOrderLine = {
+  id?: string
   product: string
   qty: number
   unitPrice: number
   taxRate: number
+  receivedQty?: number
 }
 
 export type PurchaseOrder = {

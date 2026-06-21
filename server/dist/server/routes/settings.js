@@ -7,6 +7,7 @@ const zod_1 = require("zod");
 const client_1 = require("../db/client");
 const schema_1 = require("../db/schema");
 const http_1 = require("../lib/http");
+const auth_1 = require("../middleware/auth");
 const validate_1 = require("../middleware/validate");
 const settingsSchema = zod_1.z.object({
     name: zod_1.z.string().min(2),
@@ -25,7 +26,7 @@ exports.settingsRoutes.get('/', async (c) => {
     const [row] = await client_1.db.select().from(schema_1.companySettings).where((0, drizzle_orm_1.eq)(schema_1.companySettings.id, 1));
     return (0, http_1.ok)(c, row ?? null);
 });
-exports.settingsRoutes.put('/', (0, validate_1.validate)(settingsSchema), async (c) => {
+exports.settingsRoutes.put('/', (0, auth_1.requireRole)('admin'), (0, validate_1.validate)(settingsSchema), async (c) => {
     const body = c.get('validatedBody');
     await client_1.db
         .insert(schema_1.companySettings)

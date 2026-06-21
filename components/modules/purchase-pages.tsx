@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Plus } from 'lucide-react'
@@ -315,8 +315,24 @@ export function NewPurchasePageClient() {
 
 export function PurchaseDetailPageClient() {
   const params = useParams<{ id: string }>()
-  const { getPurchaseById, hydrated } = useErpCollections()
+  const { getPurchaseById, hydrated, receivePurchaseOrder } = useErpCollections()
   const purchase = getPurchaseById(params.id)
+  const [receivedForm, setReceivedForm] = useState<Record<string, string>>({})
+
+  const canReceive = purchase && ['draft', 'ordered', 'partial'].includes(purchase.status)
+
+  useEffect(() => {
+    if (!purchase) {
+      return
+    }
+
+    const nextState = purchase.lines.reduce<Record<string, string>>((accumulator, line, index) => {
+      const key = line.id ?? `${purchase.id}-${index}`
+      accumulator[key] = String(line.receivedQty ?? 0)
+      return accumulator
+    }, {})
+    setReceivedForm(nextState)
+  }, [purchase])
 
   if (hydrated && !purchase) {
     return (
@@ -333,14 +349,43 @@ export function PurchaseDetailPageClient() {
     return null
   }
 
-  const meta = purchaseStatusMeta[purchase.status]
-  const totals = purchaseTotals(purchase.lines)
+  const currentPurchase = purchase
+  const meta = purchaseStatusMeta[currentPurchase.status]
+  const totals = purchaseTotals(currentPurchase.lines)
+
+  async function handleReceive() {
+    const payload = currentPurchase.lines.map((line, index) => {
+      const lineId = line.id ?? `${currentPurchase.id}-${index}`
+      return {
+        lineId,
+        receivedQty: Number(receivedForm[lineId] ?? line.receivedQty ?? 0),
+      }
+    })
+
+    if (payload.some((line) => Number.isNaN(line.receivedQty) || line.receivedQty < 0)) {
+      toast.error('Teslim miktarlari gecerli olmali')
+      return
+    }
+
+    if (payload.some((line, index) => line.receivedQty > currentPurchase.lines[index].qty)) {
+      toast.error('Teslim miktari siparis miktarini asamaz')
+      return
+    }
+
+    const updated = await receivePurchaseOrder(currentPurchase.id, payload)
+    if (!updated) {
+      toast.error('Teslim bilgisi kaydedilemedi')
+      return
+    }
+
+    toast.success('Teslim bilgisi kaydedildi')
+  }
 
   return (
     <>
       <PageHeader
-        title={purchase.id}
-        description={`${purchase.supplier} icin acilan satin alma siparisi.`}
+        title={currentPurchase.id}
+        description={`${currentPurchase.supplier} icin acilan satin alma siparisi.`}
       >
         <Button variant="outline" render={<Link href="/satin-alma">Listeye Don</Link>} />
         <Button render={<Link href="/satin-alma/yeni">Yeni Siparis</Link>} />
@@ -348,14 +393,14 @@ export function PurchaseDetailPageClient() {
 
       <MetricGrid
         items={[
-          { label: 'Tedarikci', value: purchase.supplier },
+          { label: 'Tedarikci', value: currentPurchase.supplier },
           {
             label: 'Durum',
             value: meta.label,
             badge: 'Satin Alma',
             badgeVariant: meta.variant,
           },
-          { label: 'Beklenen', value: formatDate(purchase.expectedDate) },
+          { label: 'Beklenen', value: formatDate(currentPurchase.expectedDate) },
           { label: 'Toplam', value: formatCurrency(totals.total) },
         ]}
       />
@@ -368,15 +413,15 @@ export function PurchaseDetailPageClient() {
         >
           <DetailList
             items={[
-              { label: 'Belge No', value: purchase.id },
-              { label: 'Tedarikci', value: purchase.supplier },
-              { label: 'Siparis Tarihi', value: formatDate(purchase.orderDate) },
-              { label: 'Beklenen Tarih', value: formatDate(purchase.expectedDate) },
+              { label: 'Belge No', value: currentPurchase.id },
+              { label: 'Tedarikci', value: currentPurchase.supplier },
+              { label: 'Siparis Tarihi', value: formatDate(currentPurchase.orderDate) },
+              { label: 'Beklenen Tarih', value: formatDate(currentPurchase.expectedDate) },
             ]}
           />
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground">Not</p>
-            <p className="mt-2 text-sm">{purchase.note || 'Not girilmedi.'}</p>
+            <p className="mt-2 text-sm">{currentPurchase.note || 'Not girilmedi.'}</p>
           </div>
         </SectionCard>
 
@@ -385,21 +430,48 @@ export function PurchaseDetailPageClient() {
           description="Siparis satirlari"
           contentClassName="space-y-3 xl:col-span-2"
         >
-          {purchase.lines.map((line) => (
-            <div key={`${purchase.id}-${line.product}`} className="rounded-lg border p-4">
+          {currentPurchase.lines.map((line, index) => (
+            <div key={`${currentPurchase.id}-${line.product}`} className="rounded-lg border p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium">{line.product}</p>
                   <p className="text-xs text-muted-foreground">
                     {line.qty} x {formatCurrency(line.unitPrice)} - %{line.taxRate} KDV
                   </p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Teslim: {formatNumber(line.receivedQty ?? 0)} / {formatNumber(line.qty)}
+                  </p>
                 </div>
                 <Badge variant="outline">
                   {formatCurrency(line.qty * line.unitPrice * (1 + line.taxRate / 100))}
                 </Badge>
               </div>
+              {canReceive ? (
+                <div className="mt-4 max-w-40">
+                  <Field>
+                    <FieldLabel htmlFor={`${purchase.id}-${index}-received`}>
+                      Teslim Alinan
+                    </FieldLabel>
+                    <Input
+                      id={`${currentPurchase.id}-${index}-received`}
+                      value={receivedForm[line.id ?? `${currentPurchase.id}-${index}`] ?? String(line.receivedQty ?? 0)}
+                      onChange={(event) =>
+                        setReceivedForm((current) => ({
+                          ...current,
+                          [line.id ?? `${currentPurchase.id}-${index}`]: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                </div>
+              ) : null}
             </div>
           ))}
+          {canReceive ? (
+            <div className="flex justify-end">
+              <Button onClick={() => void handleReceive()}>Teslimi Kaydet</Button>
+            </div>
+          ) : null}
         </SectionCard>
       </div>
     </>

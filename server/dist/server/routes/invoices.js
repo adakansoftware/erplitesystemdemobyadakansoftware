@@ -120,6 +120,68 @@ exports.invoicesRoutes.put('/:id/status', (0, validate_1.validate)(zod_1.z.objec
     }
     return (0, http_1.ok)(c, { id, status: body.status });
 });
+exports.invoicesRoutes.put('/:id', (0, validate_1.validate)(invoiceSchema), async (c) => {
+    const id = c.req.param('id');
+    const body = c.get('validatedBody');
+    const [invoice] = await client_1.db.select().from(schema_1.invoices).where((0, drizzle_orm_1.eq)(schema_1.invoices.id, id));
+    if (!invoice) {
+        return (0, http_1.fail)(c, 404, 'Invoice not found');
+    }
+    if (invoice.status !== 'draft') {
+        return (0, http_1.fail)(c, 422, 'Only draft invoices can be updated');
+    }
+    const existingLines = await client_1.db
+        .select()
+        .from(schema_1.invoiceLines)
+        .where((0, drizzle_orm_1.eq)(schema_1.invoiceLines.invoiceId, id));
+    const reservedQuantities = existingLines.reduce((accumulator, line) => {
+        if (!line.productId) {
+            return accumulator;
+        }
+        accumulator[line.productId] =
+            (accumulator[line.productId] ?? 0) + Number(line.quantity);
+        return accumulator;
+    }, {});
+    for (const line of body.lines) {
+        if (!line.productId) {
+            continue;
+        }
+        const stock = await (0, rules_1.getProductStock)(line.productId);
+        const available = stock + (reservedQuantities[line.productId] ?? 0);
+        if (available < line.quantity) {
+            return (0, http_1.fail)(c, 422, 'Insufficient stock', {
+                ok: false,
+                productId: line.productId,
+                available,
+            });
+        }
+    }
+    await client_1.db
+        .update(schema_1.invoices)
+        .set({
+        currentAccountId: body.currentAccountId,
+        customer: body.customer,
+        issueDate: body.issueDate,
+        dueDate: body.dueDate,
+        status: body.status,
+        note: body.note,
+        relatedQuotationId: body.relatedQuotationId,
+        updatedAt: new Date(),
+    })
+        .where((0, drizzle_orm_1.eq)(schema_1.invoices.id, id));
+    await client_1.db.delete(schema_1.invoiceLines).where((0, drizzle_orm_1.eq)(schema_1.invoiceLines.invoiceId, id));
+    await client_1.db.insert(schema_1.invoiceLines).values(body.lines.map((line, index) => ({
+        invoiceId: id,
+        productId: line.productId,
+        product: line.product,
+        quantity: String(line.quantity),
+        unitPrice: String(line.unitPrice),
+        taxRate: String(line.taxRate),
+        lineOrder: index,
+    })));
+    await (0, rules_1.createStockOutForInvoice)(id);
+    return (0, http_1.ok)(c, { id });
+});
 exports.invoicesRoutes.delete('/:id', async (c) => {
     const id = c.req.param('id');
     const [invoice] = await client_1.db.select().from(schema_1.invoices).where((0, drizzle_orm_1.eq)(schema_1.invoices.id, id));

@@ -4,7 +4,12 @@ import { z } from 'zod'
 import { db } from '../db/client'
 import { invoiceLines, invoices } from '../db/schema'
 import { nextDocumentId } from '../lib/ids'
-import { createInvoicePaymentTransaction, createStockOutForInvoice, ensureStockAvailable } from '../lib/rules'
+import {
+  createInvoicePaymentTransaction,
+  createStockOutForInvoice,
+  ensureStockAvailable,
+  getProductStock,
+} from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
 import { validate } from '../middleware/validate'
 
@@ -127,6 +132,81 @@ invoicesRoutes.put('/:id/status', validate(z.object({ status: z.string() })), as
     await createInvoicePaymentTransaction(id)
   }
   return ok(c, { id, status: body.status })
+})
+
+invoicesRoutes.put('/:id', validate(invoiceSchema), async (c) => {
+  const id = c.req.param('id')
+  const body = c.get('validatedBody') as z.infer<typeof invoiceSchema>
+  const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id))
+
+  if (!invoice) {
+    return fail(c, 404, 'Invoice not found')
+  }
+
+  if (invoice.status !== 'draft') {
+    return fail(c, 422, 'Only draft invoices can be updated')
+  }
+
+  const existingLines = await db
+    .select()
+    .from(invoiceLines)
+    .where(eq(invoiceLines.invoiceId, id))
+
+  const reservedQuantities = existingLines.reduce<Record<string, number>>((accumulator, line) => {
+    if (!line.productId) {
+      return accumulator
+    }
+
+    accumulator[line.productId] =
+      (accumulator[line.productId] ?? 0) + Number(line.quantity)
+    return accumulator
+  }, {})
+
+  for (const line of body.lines) {
+    if (!line.productId) {
+      continue
+    }
+
+    const stock = await getProductStock(line.productId)
+    const available = stock + (reservedQuantities[line.productId] ?? 0)
+    if (available < line.quantity) {
+      return fail(c, 422, 'Insufficient stock', {
+        ok: false,
+        productId: line.productId,
+        available,
+      })
+    }
+  }
+
+  await db
+    .update(invoices)
+    .set({
+      currentAccountId: body.currentAccountId,
+      customer: body.customer,
+      issueDate: body.issueDate,
+      dueDate: body.dueDate,
+      status: body.status,
+      note: body.note,
+      relatedQuotationId: body.relatedQuotationId,
+      updatedAt: new Date(),
+    })
+    .where(eq(invoices.id, id))
+
+  await db.delete(invoiceLines).where(eq(invoiceLines.invoiceId, id))
+  await db.insert(invoiceLines).values(
+    body.lines.map((line, index) => ({
+      invoiceId: id,
+      productId: line.productId,
+      product: line.product,
+      quantity: String(line.quantity),
+      unitPrice: String(line.unitPrice),
+      taxRate: String(line.taxRate),
+      lineOrder: index,
+    })),
+  )
+
+  await createStockOutForInvoice(id)
+  return ok(c, { id })
 })
 
 invoicesRoutes.delete('/:id', async (c) => {
