@@ -14,7 +14,7 @@ export default function LoginPage() {
   const router = useRouter()
   const { currentUser, isReady, login } = useAuth()
   const [email, setEmail] = useState('admin@demo.com')
-  const [password, setPassword] = useState('demo123')
+  const [password, setPassword] = useState('')
 
   useEffect(() => {
     if (isReady && currentUser) {

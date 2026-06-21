@@ -23,6 +23,7 @@ import {
   warehouses as warehousesTable,
 } from './schema'
 import { hashPassword } from '../lib/auth'
+import { logger } from '../lib/logger'
 import { currentAccounts } from '../../lib/data/accounts'
 import { companies, contacts, deals, leads, tasks } from '../../lib/data/crm'
 import { financeAccounts, transactions } from '../../lib/data/finance'
@@ -289,7 +290,7 @@ async function main() {
     )
   }
 
-  console.log('Seed tamamlandi')
+  logger.info('Seed tamamlandi')
 }
 
 main().catch((error) => {

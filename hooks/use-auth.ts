@@ -20,20 +20,31 @@ function toInitials(name: string) {
     .join('')
 }
 
-function mapUser(payload: any): DemoUser {
+function mapUser(payload: unknown): DemoUser | null {
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+
+  const raw = payload as Record<string, unknown>
+  if (!raw.id || !raw.email) {
+    return null
+  }
+
   const role =
-    payload.role === 'manager'
+    raw.role === 'manager'
       ? 'manager'
-      : payload.role === 'sales'
+      : raw.role === 'sales'
         ? 'sales'
         : 'admin'
 
+  const name = String(raw.name ?? 'Demo Kullanici')
+
   return {
-    id: payload.id ?? '',
-    name: payload.name ?? 'Demo Kullanici',
-    email: payload.email ?? 'admin@demo.com',
+    id: String(raw.id),
+    name,
+    email: String(raw.email),
     role,
-    initials: toInitials(payload.name ?? 'Demo Kullanici'),
+    initials: toInitials(name),
   }
 }
 
@@ -68,7 +79,7 @@ async function refreshSession() {
   }
 
   pendingSessionRequest = api
-    .get<any>('/auth/me')
+    .get<unknown>('/auth/me')
     .then((user) => {
       emitAuth({
         currentUser: mapUser(user),
@@ -110,8 +121,17 @@ export function useAuth() {
       isManager: ['admin', 'manager'].includes(state.currentUser?.role ?? ''),
       login: async (email: string, password: string) => {
         try {
-          const result = await api.post<any>('/auth/login', { email, password })
+          const result = await api.post<{ user?: unknown }>('/auth/login', {
+            email,
+            password,
+          })
           const user = mapUser(result.user)
+          if (!user) {
+            return {
+              ok: false as const,
+              message: 'Oturum bilgisi okunamadi.',
+            }
+          }
           emitAuth({ currentUser: user, isReady: true })
           return { ok: true as const, user }
         } catch (error) {

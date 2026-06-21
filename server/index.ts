@@ -4,6 +4,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { app } from './app'
 import { db } from './db/client'
 import { currentAccounts, invoices, users } from './db/schema'
+import { logger } from './lib/logger'
 import { sendMail } from './lib/mailer'
 
 const port = Number(process.env.PORT ?? 3001)
@@ -53,5 +54,5 @@ cron.schedule('0 8 * * *', async () => {
 })
 
 serve({ fetch: app.fetch, port }, () => {
-  console.log(`ERP API -> http://localhost:${port}`)
+  logger.info(`ERP API -> http://localhost:${port}`)
 })

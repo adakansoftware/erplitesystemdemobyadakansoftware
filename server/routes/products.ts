@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, ilike, or, sql } from 'drizzle-orm'
+import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { productCategories, products, stockMovements, warehouses } from '../db/schema'
@@ -58,13 +58,13 @@ productsRoutes.get('/', async (c) => {
   const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
   const offset = (page - 1) * limit
 
-  const filters = [
+  const filters: SQL[] = [
     search
       ? or(ilike(products.name, `%${search}%`), ilike(products.sku, `%${search}%`))
       : undefined,
     category ? eq(products.categoryId, category) : undefined,
     status ? eq(products.status, status) : undefined,
-  ].filter(Boolean)
+  ].filter((filter): filter is SQL => filter !== undefined)
 
   const [result, countResult] = await Promise.all([
     db

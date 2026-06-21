@@ -204,189 +204,207 @@ function productIdByName(products: Product[], productName: string) {
   return products.find((product) => product.name === productName)?.id ?? ''
 }
 
-function mapProduct(item: any): Product {
+function asRecord(value: unknown) {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+function mapProduct(item: unknown): Product {
+  const raw = asRecord(item)
   return {
-    id: item.id,
-    name: item.name ?? '',
-    sku: item.sku ?? '',
-    barcode: item.barcode ?? '',
-    category: item.category ?? '',
-    brand: item.brand ?? '',
-    unit: item.unit ?? 'Adet',
-    costPrice: Number(item.costPrice ?? 0),
-    supplierPrice: Number(item.supplierPrice ?? item.costPrice ?? 0),
-    salePrice: Number(item.salePrice ?? 0),
-    taxRate: Number(item.taxRate ?? 0),
-    stock: Number(item.stock ?? item.totalStock ?? 0),
-    reorderPoint: Number(item.reorderPoint ?? 0),
-    status: (item.status ?? 'active') as ProductStatus,
-    description: item.description ?? '',
-    createdAt: String(item.createdAt ?? new Date().toISOString()).slice(0, 10),
+    id: String(raw.id ?? ''),
+    name: String(raw.name ?? ''),
+    sku: String(raw.sku ?? ''),
+    barcode: String(raw.barcode ?? ''),
+    category: String(raw.category ?? ''),
+    brand: String(raw.brand ?? ''),
+    unit: String(raw.unit ?? 'Adet'),
+    costPrice: Number(raw.costPrice ?? 0),
+    supplierPrice: Number(raw.supplierPrice ?? raw.costPrice ?? 0),
+    salePrice: Number(raw.salePrice ?? 0),
+    taxRate: Number(raw.taxRate ?? 0),
+    stock: Number(raw.stock ?? raw.totalStock ?? 0),
+    reorderPoint: Number(raw.reorderPoint ?? 0),
+    status: (raw.status ?? 'active') as ProductStatus,
+    description: String(raw.description ?? ''),
+    createdAt: String(raw.createdAt ?? new Date().toISOString()).slice(0, 10),
   }
 }
 
-function mapInvoiceLine(line: any): InvoiceLine {
+function mapInvoiceLine(line: unknown): InvoiceLine {
+  const raw = asRecord(line)
   return {
-    product: line.product ?? '',
-    quantity: Number(line.quantity ?? 0),
-    unitPrice: Number(line.unitPrice ?? 0),
-    taxRate: Number(line.taxRate ?? 0),
+    product: String(raw.product ?? ''),
+    quantity: Number(raw.quantity ?? 0),
+    unitPrice: Number(raw.unitPrice ?? 0),
+    taxRate: Number(raw.taxRate ?? 0),
   }
 }
 
-function mapInvoice(item: any): Invoice {
+function mapInvoice(item: unknown): Invoice {
+  const raw = asRecord(item)
   return {
-    id: item.id,
-    customer: item.customer ?? '',
-    issueDate: item.issueDate ?? '',
-    dueDate: item.dueDate ?? '',
-    status: item.status ?? 'draft',
-    lines: Array.isArray(item.lines) ? item.lines.map(mapInvoiceLine) : [],
-    note: item.note ?? '',
-    relatedQuotation: item.relatedQuotation ?? item.relatedQuotationId ?? undefined,
+    id: String(raw.id ?? ''),
+    customer: String(raw.customer ?? ''),
+    issueDate: String(raw.issueDate ?? ''),
+    dueDate: String(raw.dueDate ?? ''),
+    status: String(raw.status ?? 'draft') as Invoice['status'],
+    lines: Array.isArray(raw.lines) ? raw.lines.map(mapInvoiceLine) : [],
+    note: String(raw.note ?? ''),
+    relatedQuotation: raw.relatedQuotation ?? raw.relatedQuotationId ? String(raw.relatedQuotation ?? raw.relatedQuotationId) : undefined,
   }
 }
 
-function mapQuotationLine(line: any): QuotationLine {
+function mapQuotationLine(line: unknown): QuotationLine {
+  const raw = asRecord(line)
   return {
-    product: line.product ?? '',
-    quantity: Number(line.quantity ?? 0),
-    unitPrice: Number(line.unitPrice ?? 0),
-    taxRate: Number(line.taxRate ?? 0),
+    product: String(raw.product ?? ''),
+    quantity: Number(raw.quantity ?? 0),
+    unitPrice: Number(raw.unitPrice ?? 0),
+    taxRate: Number(raw.taxRate ?? 0),
   }
 }
 
-function mapQuotation(item: any): Quotation {
+function mapQuotation(item: unknown): Quotation {
+  const raw = asRecord(item)
   return {
-    id: item.id,
-    customer: item.customer ?? '',
-    date: item.date ?? '',
-    validUntil: item.validUntil ?? '',
-    status: item.status ?? 'draft',
-    lines: Array.isArray(item.lines) ? item.lines.map(mapQuotationLine) : [],
-    note: item.note ?? '',
-    relatedInvoice: item.relatedInvoice ?? item.convertedToInvoiceId ?? undefined,
+    id: String(raw.id ?? ''),
+    customer: String(raw.customer ?? ''),
+    date: String(raw.date ?? ''),
+    validUntil: String(raw.validUntil ?? ''),
+    status: String(raw.status ?? 'draft') as QuotationStatus,
+    lines: Array.isArray(raw.lines) ? raw.lines.map(mapQuotationLine) : [],
+    note: String(raw.note ?? ''),
+    relatedInvoice: raw.relatedInvoice ?? raw.convertedToInvoiceId ? String(raw.relatedInvoice ?? raw.convertedToInvoiceId) : undefined,
   }
 }
 
-function mapPurchaseLine(line: any): PurchaseOrderLine {
+function mapPurchaseLine(line: unknown): PurchaseOrderLine {
+  const raw = asRecord(line)
   return {
-    id: line.id ?? undefined,
-    product: line.product ?? '',
-    qty: Number(line.qty ?? line.quantity ?? 0),
-    unitPrice: Number(line.unitPrice ?? 0),
-    taxRate: Number(line.taxRate ?? 0),
-    receivedQty: Number(line.receivedQty ?? 0),
+    id: raw.id ? String(raw.id) : undefined,
+    product: String(raw.product ?? ''),
+    qty: Number(raw.qty ?? raw.quantity ?? 0),
+    unitPrice: Number(raw.unitPrice ?? 0),
+    taxRate: Number(raw.taxRate ?? 0),
+    receivedQty: Number(raw.receivedQty ?? 0),
   }
 }
 
-function mapPurchase(item: any): PurchaseOrder {
+function mapPurchase(item: unknown): PurchaseOrder {
+  const raw = asRecord(item)
   return {
-    id: item.id,
-    supplier: item.supplier ?? '',
-    orderDate: item.orderDate ?? '',
-    expectedDate: item.expectedDate ?? '',
-    status: item.status ?? 'draft',
-    note: item.note ?? '',
-    lines: Array.isArray(item.lines) ? item.lines.map(mapPurchaseLine) : [],
+    id: String(raw.id ?? ''),
+    supplier: String(raw.supplier ?? ''),
+    orderDate: String(raw.orderDate ?? ''),
+    expectedDate: String(raw.expectedDate ?? ''),
+    status: String(raw.status ?? 'draft') as PurchaseOrderStatus,
+    note: String(raw.note ?? ''),
+    lines: Array.isArray(raw.lines) ? raw.lines.map(mapPurchaseLine) : [],
   }
 }
 
-function mapCurrentAccount(item: any): CurrentAccount {
+function mapCurrentAccount(item: unknown): CurrentAccount {
+  const raw = asRecord(item)
   return {
-    id: item.id,
-    name: item.name ?? '',
-    type: item.type === 'supplier' ? 'supplier' : 'customer',
-    taxNumber: item.taxNumber ?? '',
-    city: item.city ?? '',
-    phone: item.phone ?? '',
-    email: item.email ?? '',
-    balance: Number(item.balance ?? 0),
-    creditLimit: Number(item.creditLimit ?? 0),
+    id: String(raw.id ?? ''),
+    name: String(raw.name ?? ''),
+    type: raw.type === 'supplier' ? 'supplier' : 'customer',
+    taxNumber: String(raw.taxNumber ?? ''),
+    city: String(raw.city ?? ''),
+    phone: String(raw.phone ?? ''),
+    email: String(raw.email ?? ''),
+    balance: Number(raw.balance ?? 0),
+    creditLimit: Number(raw.creditLimit ?? 0),
   }
 }
 
-function mapTask(item: any): Task {
+function mapTask(item: unknown): Task {
+  const raw = asRecord(item)
   return {
-    id: item.id,
-    title: item.title ?? '',
-    related: item.related ?? '',
-    due: item.due ?? '',
-    priority: (item.priority ?? 'medium') as Task['priority'],
-    done: Boolean(item.done),
-    owner: item.owner ?? '',
+    id: String(raw.id ?? ''),
+    title: String(raw.title ?? ''),
+    related: String(raw.related ?? ''),
+    due: String(raw.due ?? ''),
+    priority: (raw.priority ?? 'medium') as Task['priority'],
+    done: Boolean(raw.done),
+    owner: String(raw.owner ?? ''),
   }
 }
 
-function mapMovement(item: any): StockMovement {
+function mapMovement(item: unknown): StockMovement {
+  const raw = asRecord(item)
   return {
-    id: item.id,
-    productId: item.productId ?? '',
-    warehouseId: item.warehouseId ?? 'WH-01',
+    id: String(raw.id ?? ''),
+    productId: String(raw.productId ?? ''),
+    warehouseId: String(raw.warehouseId ?? 'WH-01'),
     date:
-      typeof item.date === 'string'
-        ? item.date.slice(0, 10)
-        : String(item.createdAt ?? '').slice(0, 10),
-    qty: Number(item.qty ?? 0),
-    note: item.note ?? '',
-    relatedDoc: item.relatedDoc ?? item.relatedDocId ?? undefined,
-    product: item.product ?? '',
-    sku: item.sku ?? '',
-    type: (item.type ?? 'in') as MovementType,
-    warehouse: item.warehouse ?? 'Merkez Depo',
-    user: item.user ?? 'ERP Lite',
+      typeof raw.date === 'string'
+        ? raw.date.slice(0, 10)
+        : String(raw.createdAt ?? '').slice(0, 10),
+    qty: Number(raw.qty ?? 0),
+    note: String(raw.note ?? ''),
+    relatedDoc: raw.relatedDoc ?? raw.relatedDocId ? String(raw.relatedDoc ?? raw.relatedDocId) : undefined,
+    product: String(raw.product ?? ''),
+    sku: String(raw.sku ?? ''),
+    type: (raw.type ?? 'in') as MovementType,
+    warehouse: String(raw.warehouse ?? 'Merkez Depo'),
+    user: String(raw.user ?? 'ERP Lite'),
   }
 }
 
-function mapLead(item: any): Lead {
+function mapLead(item: unknown): Lead {
+  const raw = asRecord(item)
   return {
-    id: item.id,
-    name: item.name ?? '',
-    company: item.company ?? '',
-    source: item.source ?? '',
-    status: (item.status ?? 'new') as Lead['status'],
-    value: Number(item.value ?? 0),
-    owner: item.owner ?? '',
-    createdAt: String(item.createdAt ?? '').slice(0, 10),
+    id: String(raw.id ?? ''),
+    name: String(raw.name ?? ''),
+    company: String(raw.company ?? ''),
+    source: String(raw.source ?? ''),
+    status: (raw.status ?? 'new') as Lead['status'],
+    value: Number(raw.value ?? 0),
+    owner: String(raw.owner ?? ''),
+    createdAt: String(raw.createdAt ?? '').slice(0, 10),
   }
 }
 
-function mapFinanceAccount(item: any): FinanceAccount {
+function mapFinanceAccount(item: unknown): FinanceAccount {
+  const raw = asRecord(item)
   return {
-    id: item.id,
-    name: item.name ?? '',
-    type: item.type === 'cash' ? 'cash' : 'bank',
-    bankName: item.bankName ?? undefined,
-    iban: item.iban ?? undefined,
-    currency: item.currency ?? 'TRY',
-    balance: Number(item.balance ?? 0),
+    id: String(raw.id ?? ''),
+    name: String(raw.name ?? ''),
+    type: raw.type === 'cash' ? 'cash' : 'bank',
+    bankName: raw.bankName ? String(raw.bankName) : undefined,
+    iban: raw.iban ? String(raw.iban) : undefined,
+    currency: String(raw.currency ?? 'TRY'),
+    balance: Number(raw.balance ?? 0),
   }
 }
 
-function mapTransaction(item: any): FinanceTransaction {
+function mapTransaction(item: unknown): FinanceTransaction {
+  const raw = asRecord(item)
   return {
-    id: item.id,
-    date: item.date ?? '',
-    description: item.description ?? '',
-    category: item.category ?? '',
-    account: item.account ?? '',
-    type: item.type === 'expense' ? 'expense' : 'income',
-    amount: Number(item.amount ?? 0),
-    currentAccountId: item.currentAccountId ?? undefined,
-    financeAccountId: item.financeAccountId ?? undefined,
+    id: String(raw.id ?? ''),
+    date: String(raw.date ?? ''),
+    description: String(raw.description ?? ''),
+    category: String(raw.category ?? ''),
+    account: String(raw.account ?? ''),
+    type: raw.type === 'expense' ? 'expense' : 'income',
+    amount: Number(raw.amount ?? 0),
+    currentAccountId: raw.currentAccountId ? String(raw.currentAccountId) : undefined,
+    financeAccountId: raw.financeAccountId ? String(raw.financeAccountId) : undefined,
   }
 }
 
-function mapWarehouse(item: any): Warehouse {
+function mapWarehouse(item: unknown): Warehouse {
+  const raw = asRecord(item)
   return {
-    id: item.id,
-    name: item.name ?? '',
-    location: item.location ?? '',
-    manager: item.manager ?? '',
-    capacity: Number(item.capacity ?? 0),
-    used: Number(item.used ?? 0),
-    itemCount: Number(item.itemCount ?? 0),
-    status: item.active === false ? 'passive' : 'active',
+    id: String(raw.id ?? ''),
+    name: String(raw.name ?? ''),
+    location: String(raw.location ?? ''),
+    manager: String(raw.manager ?? ''),
+    capacity: Number(raw.capacity ?? 0),
+    used: Number(raw.used ?? 0),
+    itemCount: Number(raw.itemCount ?? 0),
+    status: raw.active === false ? 'passive' : 'active',
   }
 }
 
@@ -440,21 +458,21 @@ async function refreshStore() {
       rawTransactions,
       rawWarehouses,
     ] = await Promise.all([
-      requestCollection('Urunler', api.get<any[]>('/products')),
-      requestCollection('Urun kategorileri', api.get<any[]>('/products/categories')),
-      requestCollection('Faturalar', api.get<any[]>('/invoices')),
-      requestCollection('Teklifler', api.get<any[]>('/quotations')),
-      requestCollection('Satin alma', api.get<any[]>('/purchase-orders')),
-      requestCollection('Cari hesaplar', api.get<any[]>('/current-accounts')),
-      requestCollection('Gorevler', api.get<any[]>('/crm/tasks')),
-      requestCollection('Stok hareketleri', api.get<any[]>('/stock/movements')),
-      requestCollection('Leads', api.get<any[]>('/crm/leads')),
-      requestCollection('Anlasmalar', api.get<any[]>('/crm/deals')),
-      requestCollection('Firmalar', api.get<any[]>('/crm/companies')),
-      requestCollection('Kontaklar', api.get<any[]>('/crm/contacts')),
-      requestCollection('Kasa banka hesaplari', api.get<any[]>('/finance/accounts')),
-      requestCollection('Finans hareketleri', api.get<any[]>('/finance/transactions')),
-      requestCollection('Depolar', api.get<any[]>('/stock/warehouses')),
+      requestCollection('Urunler', api.get<unknown[]>('/products')),
+      requestCollection('Urun kategorileri', api.get<unknown[]>('/products/categories')),
+      requestCollection('Faturalar', api.get<unknown[]>('/invoices')),
+      requestCollection('Teklifler', api.get<unknown[]>('/quotations')),
+      requestCollection('Satin alma', api.get<unknown[]>('/purchase-orders')),
+      requestCollection('Cari hesaplar', api.get<unknown[]>('/current-accounts')),
+      requestCollection('Gorevler', api.get<unknown[]>('/crm/tasks')),
+      requestCollection('Stok hareketleri', api.get<unknown[]>('/stock/movements')),
+      requestCollection('Leads', api.get<unknown[]>('/crm/leads')),
+      requestCollection('Anlasmalar', api.get<unknown[]>('/crm/deals')),
+      requestCollection('Firmalar', api.get<unknown[]>('/crm/companies')),
+      requestCollection('Kontaklar', api.get<unknown[]>('/crm/contacts')),
+      requestCollection('Kasa banka hesaplari', api.get<unknown[]>('/finance/accounts')),
+      requestCollection('Finans hareketleri', api.get<unknown[]>('/finance/transactions')),
+      requestCollection('Depolar', api.get<unknown[]>('/stock/warehouses')),
     ])
 
     const collectionErrors = [
@@ -496,8 +514,8 @@ async function refreshStore() {
       ? Array.from(
           new Set(
             rawProductCategories.data
-              .map((item: any) => item.name ?? '')
-              .filter(Boolean)
+              .map((item) => String(asRecord(item).name ?? ''))
+              .filter((item): item is string => Boolean(item))
               .concat(products.map((product) => product.category).filter(Boolean)),
           ),
         ).sort((a, b) => a.localeCompare(b, 'tr'))
@@ -521,47 +539,64 @@ async function refreshStore() {
     const invoiceRows = rawInvoices.ok ? rawInvoices.data : []
     const quotationRows = rawQuotations.ok ? rawQuotations.data : []
     const taskRows = rawTasks.ok ? rawTasks.data : []
+    const companyNameById = new Map(
+      companyRows.map((company) => {
+        const raw = asRecord(company)
+        return [String(raw.id ?? ''), String(raw.name ?? '')] as const
+      }),
+    )
 
     const deals = rawDeals.ok
-      ? dealRows.map((item: any) => ({
-      id: item.id,
-      title: item.title ?? '',
-      customer:
-        item.customer ??
-        (item.currentAccountId ? currentAccountMap.get(item.currentAccountId) ?? '' : ''),
-      stage: (item.stage ?? 'lead') as Deal['stage'],
-      value: Number(item.value ?? 0),
-      owner: item.owner ?? '',
-      closeDate: item.closeDate ?? '',
-    }))
+      ? dealRows.map((item) => {
+          const raw = asRecord(item)
+          return {
+            id: String(raw.id ?? ''),
+            title: String(raw.title ?? ''),
+            customer:
+              String(raw.customer ?? '') ||
+              (raw.currentAccountId
+                ? currentAccountMap.get(String(raw.currentAccountId)) ?? ''
+                : ''),
+            stage: (raw.stage ?? 'lead') as Deal['stage'],
+            value: Number(raw.value ?? 0),
+            owner: String(raw.owner ?? ''),
+            closeDate: String(raw.closeDate ?? ''),
+          }
+        })
       : storeState.deals
 
     const contacts = rawContacts.ok
-      ? contactRows.map((item: any) => ({
-      id: item.id,
-      name: item.name ?? '',
-      title: item.title ?? '',
-      company:
-        item.company ??
-        (item.companyId
-          ? (companyRows.find((company: any) => company.id === item.companyId)?.name ?? '')
-          : ''),
-      email: item.email ?? '',
-      phone: item.phone ?? '',
-    }))
+      ? contactRows.map((item) => {
+          const raw = asRecord(item)
+          return {
+            id: String(raw.id ?? ''),
+            name: String(raw.name ?? ''),
+            title: String(raw.title ?? ''),
+            company:
+              String(raw.company ?? '') ||
+              (raw.companyId ? companyNameById.get(String(raw.companyId)) ?? '' : ''),
+            email: String(raw.email ?? ''),
+            phone: String(raw.phone ?? ''),
+          }
+        })
       : storeState.contacts
 
     const companies = rawCompanies.ok
-      ? companyRows.map((item: any) => ({
-      id: item.id,
-      name: item.name ?? '',
-      sector: item.sector ?? '',
-      city: item.city ?? '',
-      contacts: contacts.filter((contact) => contact.company === item.name).length,
-      openDeals: deals.filter(
-        (deal) => deal.customer === item.name && !['won', 'lost'].includes(deal.stage),
-      ).length,
-    }))
+      ? companyRows.map((item) => {
+          const raw = asRecord(item)
+          const companyName = String(raw.name ?? '')
+          return {
+            id: String(raw.id ?? ''),
+            name: companyName,
+            sector: String(raw.sector ?? ''),
+            city: String(raw.city ?? ''),
+            contacts: contacts.filter((contact) => contact.company === companyName).length,
+            openDeals: deals.filter(
+              (deal) =>
+                deal.customer === companyName && !['won', 'lost'].includes(deal.stage),
+            ).length,
+          }
+        })
       : storeState.companies
 
     setStoreState({
@@ -577,13 +612,16 @@ async function refreshStore() {
       currentAccounts,
       tasks: rawTasks.ok ? taskRows.map(mapTask) : storeState.tasks,
       stockMovements: rawMovements.ok
-        ? movementRows.map((item: any) => ({
-            ...mapMovement(item),
-            warehouse:
-              item.warehouse ??
-              warehouseMap.get(item.warehouseId)?.name ??
-              'Merkez Depo',
-          }))
+        ? movementRows.map((item) => {
+            const raw = asRecord(item)
+            return {
+              ...mapMovement(raw),
+              warehouse:
+                String(raw.warehouse ?? '') ||
+                (warehouseMap.get(String(raw.warehouseId ?? ''))?.name ??
+                  'Merkez Depo'),
+            }
+          })
         : storeState.stockMovements,
       leads: rawLeads.ok ? leadRows.map(mapLead) : storeState.leads,
       deals,
@@ -631,7 +669,7 @@ async function createProductAction(payload: {
   description: string
   status?: ProductStatus
 }) {
-  const created = await api.post<any>('/products', {
+  const created = await api.post<unknown>('/products', {
     name: payload.name,
     sku: payload.sku,
     barcode: payload.barcode,
@@ -647,8 +685,9 @@ async function createProductAction(payload: {
   })
 
   if (payload.stock > 0) {
+    const rawCreated = asRecord(created)
     await api.post('/stock/movements', {
-      productId: created.id,
+      productId: String(rawCreated.id ?? ''),
       type: 'in',
       qty: payload.stock,
       note: 'Acilis stok bakiyesi',
@@ -657,7 +696,11 @@ async function createProductAction(payload: {
   }
 
   await refreshStore()
-  return storeState.products.find((product) => product.id === created.id) ?? mapProduct(created)
+  const rawCreated = asRecord(created)
+  return (
+    storeState.products.find((product) => product.id === String(rawCreated.id ?? '')) ??
+    mapProduct(created)
+  )
 }
 
 async function updateProductAction(
@@ -730,7 +773,7 @@ async function addStockMovementAction(payload: {
     return null
   }
 
-  const movement = await api.post<any>('/stock/movements', {
+  const movement = await api.post<unknown>('/stock/movements', {
     productId: product.id,
     warehouseId: payload.warehouseId ?? 'WH-01',
     type: payload.type,
@@ -740,8 +783,9 @@ async function addStockMovementAction(payload: {
   })
 
   await refreshStore()
+  const rawMovement = asRecord(movement)
   return mapMovement({
-    ...movement,
+    ...rawMovement,
     product: product.name,
     sku: product.sku,
     warehouse: payload.warehouse ?? 'Merkez Depo',

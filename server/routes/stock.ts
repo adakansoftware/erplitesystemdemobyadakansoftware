@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { productCategories, products, stockMovements, warehouses } from '../db/schema'
@@ -31,11 +31,11 @@ stockRoutes.get('/movements', async (c) => {
   const warehouseId = c.req.query('warehouseId')
   const type = c.req.query('type')
 
-  const filters = [
+  const filters: SQL[] = [
     productId ? eq(stockMovements.productId, productId) : undefined,
     warehouseId ? eq(stockMovements.warehouseId, warehouseId) : undefined,
     type ? eq(stockMovements.type, type) : undefined,
-  ].filter(Boolean)
+  ].filter((filter): filter is SQL => filter !== undefined)
 
   const result = await db
     .select()

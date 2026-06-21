@@ -95,8 +95,8 @@ npm run dev:api:watch
 - `DATABASE_URL`: PostgreSQL baglanti adresi
 - `JWT_SECRET`: auth token imzalama anahtari
 - `PORT`: Hono API portu
-- `APP_ORIGIN`: API icin izinli frontend origin'i
-- `API_PROXY_TARGET`: Next proxy'nin yonlendirecegi API adresi
+- `APP_ORIGIN`: Next.js frontend URL'i. CORS izinleri bu adres uzerinden verilir.
+- `API_PROXY_TARGET`: Next.js proxy'nin yonlendirecegi Hono backend adresi.
 - `SMTP_*`: bildirim e-postalari icin SMTP ayarlari
 
 ## Kalite Kontrolleri
