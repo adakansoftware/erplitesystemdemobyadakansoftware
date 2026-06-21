@@ -3,6 +3,8 @@ import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { productCategories, products, stockMovements, warehouses } from '../db/schema'
+import { audit } from '../lib/audit'
+import { cached, invalidate } from '../lib/cache'
 import { attachProductStocks, getProductStock } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
 import { requireRole } from '../middleware/auth'
@@ -66,32 +68,46 @@ productsRoutes.get('/', async (c) => {
     status ? eq(products.status, status) : undefined,
   ].filter((filter): filter is SQL => filter !== undefined)
 
-  const [result, countResult] = await Promise.all([
-    db
-      .select()
-      .from(products)
-      .where(filters.length ? and(...filters) : undefined)
-      .limit(limit)
-      .offset(offset),
-    db
-      .select({ count: sql<string>`count(*)` })
-      .from(products)
-      .where(filters.length ? and(...filters) : undefined),
-  ])
+  const cacheKey = [
+    'products:list',
+    search ?? '',
+    category ?? '',
+    status ?? '',
+    String(page),
+    String(limit),
+  ].join(':')
+  const { items, total } = await cached(cacheKey, 120, async () => {
+    const [result, countResult, categories] = await Promise.all([
+      db
+        .select()
+        .from(products)
+        .where(filters.length ? and(...filters) : undefined)
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ count: sql<string>`count(*)` })
+        .from(products)
+        .where(filters.length ? and(...filters) : undefined),
+      db.select().from(productCategories),
+    ])
 
-  const categories = await db.select().from(productCategories)
-  const categoryMap = new Map(categories.map((category) => [category.id, category.name]))
-  const withStocks = await attachProductStocks(result)
-  const total = Number(countResult[0]?.count ?? 0)
+    const categoryMap = new Map(categories.map((item) => [item.id, item.name]))
+    const withStocks = await attachProductStocks(result)
+
+    return {
+      items: withStocks.map((item) => ({
+        ...item,
+        category: item.categoryId ? categoryMap.get(item.categoryId) ?? '' : '',
+        stock: item.totalStock,
+        supplierPrice: Number(item.costPrice ?? 0),
+      })),
+      total: Number(countResult[0]?.count ?? 0),
+    }
+  })
 
   return ok(
     c,
-    withStocks.map((item) => ({
-      ...item,
-      category: item.categoryId ? categoryMap.get(item.categoryId) ?? '' : '',
-      stock: item.totalStock,
-      supplierPrice: Number(item.costPrice ?? 0),
-    })),
+    items,
     { total, page, limit, pages: Math.ceil(total / limit) },
   )
 })
@@ -114,12 +130,14 @@ productsRoutes.post('/categories', validate(categorySchema), async (c) => {
   }
 
   const [createdCategory] = await db.insert(productCategories).values({ name: body.name }).returning()
+  await invalidate('products:*')
   return created(c, createdCategory)
 })
 
 productsRoutes.delete('/categories/:id', requireRole('admin'), async (c) => {
   const id = c.req.param('id')
   await db.delete(productCategories).where(eq(productCategories.id, id))
+  await invalidate('products:*')
   return ok(c, { id })
 })
 
@@ -194,6 +212,16 @@ productsRoutes.post('/', validate(createSchema), async (c) => {
   })
 
   const [product] = await db.select().from(products).where(eq(products.sku, body.sku))
+  await invalidate('products:*')
+  await audit({
+    userId: (c.get('user') as { id?: string } | undefined)?.id,
+    action: 'create',
+    entity: 'product',
+    entityId: product?.id,
+    newValues: product,
+    ip: c.req.header('x-forwarded-for'),
+    userAgent: c.req.header('user-agent'),
+  })
   return created(c, product)
 })
 
@@ -221,6 +249,7 @@ productsRoutes.put('/:id', validate(updateSchema), async (c) => {
     .where(eq(products.id, id))
 
   const [product] = await db.select().from(products).where(eq(products.id, id))
+  await invalidate('products:*')
   return ok(c, product)
 })
 
@@ -230,5 +259,6 @@ productsRoutes.delete('/:id', async (c) => {
     .update(products)
     .set({ status: 'archived', updatedAt: new Date() })
     .where(eq(products.id, id))
+  await invalidate('products:*')
   return ok(c, { id, status: 'archived' })
 })

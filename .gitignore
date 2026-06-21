@@ -14,5 +14,6 @@ __v0_jsx-dev-runtime.ts
 node_modules
 .next/
 /server/dist/
+coverage/
 tsconfig.tsbuildinfo
 .DS_Store

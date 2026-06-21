@@ -10,7 +10,7 @@ export function created<T>(c: Context, data: T) {
 
 export function fail(
   c: Context,
-  status: 400 | 401 | 403 | 404 | 409 | 422 | 500,
+  status: 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500,
   error: string,
   details?: unknown,
 ) {

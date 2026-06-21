@@ -3,6 +3,8 @@ import { and, eq, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { productCategories, products, stockMovements, warehouses } from '../db/schema'
+import { cached, invalidate } from '../lib/cache'
+import { eventBus } from '../lib/event-bus'
 import { getProductStock } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
 import { validate } from '../middleware/validate'
@@ -89,25 +91,39 @@ stockRoutes.post('/movements', validate(movementSchema), async (c) => {
     .from(stockMovements)
     .orderBy(sql`${stockMovements.createdAt} desc`)
     .limit(1)
+  const [product] = await db.select().from(products).where(eq(products.id, body.productId))
+  const currentStock = await getProductStock(body.productId)
+  if (product && currentStock <= Number(product.reorderPoint)) {
+    eventBus.emit('stock.low', {
+      productId: product.id,
+      qty: currentStock,
+      threshold: Number(product.reorderPoint),
+    })
+  }
+  await invalidate('products:*')
+  await invalidate('stock:summary')
 
   return created(c, movement)
 })
 
 stockRoutes.get('/summary', async (c) => {
-  const [items, categories] = await Promise.all([
-    db.select().from(products),
-    db.select().from(productCategories),
-  ])
-  const categoryMap = new Map(categories.map((category) => [category.id, category.name]))
-  const summary = await Promise.all(
-    items.map(async (item) => ({
-      ...item,
-      category: item.categoryId ? categoryMap.get(item.categoryId) ?? '' : '',
-      supplierPrice: Number(item.costPrice ?? 0),
-      stock: await getProductStock(item.id),
-      totalStock: await getProductStock(item.id),
-    })),
-  )
+  const summary = await cached('stock:summary', 60, async () => {
+    const [items, categories] = await Promise.all([
+      db.select().from(products),
+      db.select().from(productCategories),
+    ])
+    const categoryMap = new Map(categories.map((category) => [category.id, category.name]))
+
+    return Promise.all(
+      items.map(async (item) => ({
+        ...item,
+        category: item.categoryId ? categoryMap.get(item.categoryId) ?? '' : '',
+        supplierPrice: Number(item.costPrice ?? 0),
+        stock: await getProductStock(item.id),
+        totalStock: await getProductStock(item.id),
+      })),
+    )
+  })
   return ok(c, summary)
 })
 
@@ -124,5 +140,6 @@ stockRoutes.post('/warehouses', validate(warehouseSchema), async (c) => {
     manager: body.manager,
     capacity: body.capacity,
   })
+  await invalidate('stock:summary')
   return created(c, body)
 })

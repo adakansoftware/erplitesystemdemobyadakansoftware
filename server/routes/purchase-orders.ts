@@ -3,6 +3,8 @@ import { and, eq, ilike, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { purchaseOrderLines, purchaseOrders } from '../db/schema'
+import { invalidate } from '../lib/cache'
+import { eventBus } from '../lib/event-bus'
 import { nextDocumentId } from '../lib/ids'
 import { createStockInForPurchaseOrder } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
@@ -165,5 +167,11 @@ purchaseOrdersRoutes.post('/:id/receive', validate(z.object({
     .where(eq(purchaseOrders.id, id))
 
   await createStockInForPurchaseOrder(id)
+  await invalidate('products:*')
+  await invalidate('stock:summary')
+  eventBus.emit('purchase.received', {
+    purchaseId: id,
+    userId: (c.get('user') as { id?: string } | undefined)?.id,
+  })
   return ok(c, { id, status: fullyReceived ? 'received' : 'partial' })
 })

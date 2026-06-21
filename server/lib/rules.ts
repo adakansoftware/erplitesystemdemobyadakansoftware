@@ -119,7 +119,7 @@ export async function createInvoicePaymentTransaction(
 ) {
   const [invoice] = await db.select().from(invoices).where(eq(invoices.id, invoiceId))
   if (!invoice) {
-    return
+    return 0
   }
 
   const lines = await db
@@ -152,6 +152,8 @@ export async function createInvoicePaymentTransaction(
     currentAccountId: invoice.currentAccountId,
     createdBy: userId,
   })
+
+  return total
 }
 
 export async function calculateCurrentAccountBalance(currentAccountId: string) {

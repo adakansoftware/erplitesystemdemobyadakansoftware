@@ -3,6 +3,9 @@ import { and, eq, ilike, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { currentAccounts, invoiceLines, invoices, quotationLines, quotations } from '../db/schema'
+import { audit } from '../lib/audit'
+import { invalidate } from '../lib/cache'
+import { eventBus } from '../lib/event-bus'
 import { nextDocumentId } from '../lib/ids'
 import { created, fail, ok } from '../lib/http'
 import { sendMail } from '../lib/mailer'
@@ -116,6 +119,15 @@ quotationsRoutes.post('/', validate(quotationSchema), async (c) => {
       lineOrder: index,
     })),
   )
+  await audit({
+    userId: (c.get('user') as { id?: string } | undefined)?.id,
+    action: 'create',
+    entity: 'quotation',
+    entityId: id,
+    newValues: body,
+    ip: c.req.header('x-forwarded-for'),
+    userAgent: c.req.header('user-agent'),
+  })
   return created(c, { id })
 })
 
@@ -183,6 +195,13 @@ quotationsRoutes.post('/:id/convert-to-invoice', async (c) => {
     .update(quotations)
     .set({ status: 'accepted', convertedToInvoiceId: invoiceId, updatedAt: new Date() })
     .where(eq(quotations.id, id))
+  await invalidate('reports:sales:*')
+  await invalidate('products:*')
+  eventBus.emit('quotation.accepted', {
+    quotationId: id,
+    invoiceId,
+    userId: (c.get('user') as { id?: string } | undefined)?.id,
+  })
 
   return ok(c, { invoiceId })
 })

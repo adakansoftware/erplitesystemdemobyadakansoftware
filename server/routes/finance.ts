@@ -3,6 +3,8 @@ import { and, eq, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { financeAccounts, transactions } from '../db/schema'
+import { audit } from '../lib/audit'
+import { cached, invalidate } from '../lib/cache'
 import { nextTransactionId } from '../lib/ids'
 import { created, ok } from '../lib/http'
 import { toNumber } from '../lib/serializers'
@@ -56,6 +58,7 @@ financeRoutes.post('/accounts', validate(financeAccountSchema), async (c) => {
     iban: body.iban,
     currency: body.currency,
   })
+  await invalidate('finance:summary')
   return created(c, body)
 })
 
@@ -100,8 +103,9 @@ financeRoutes.get('/transactions', async (c) => {
 financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof transactionSchema>
   const ids = await db.select({ id: transactions.id }).from(transactions)
+  const id = body.id ?? nextTransactionId(ids.map((item) => item.id))
   await db.insert(transactions).values({
-    id: body.id ?? nextTransactionId(ids.map((item) => item.id)),
+    id,
     date: body.date,
     description: body.description,
     category: body.category,
@@ -110,34 +114,51 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
     amount: String(body.amount),
     currentAccountId: body.currentAccountId,
   })
+  await invalidate('reports:cashflow:*')
+  await audit({
+    userId: (c.get('user') as { id?: string } | undefined)?.id,
+    action: 'create',
+    entity: 'transaction',
+    entityId: id,
+    newValues: body,
+    ip: c.req.header('x-forwarded-for'),
+    userAgent: c.req.header('user-agent'),
+  })
+  await invalidate('finance:summary')
   return created(c, body)
 })
 
 financeRoutes.delete('/transactions/:id', requireRole('admin'), async (c) => {
   const id = c.req.param('id')
   await db.delete(transactions).where(eq(transactions.id, id))
+  await invalidate('reports:cashflow:*')
+  await invalidate('finance:summary')
   return ok(c, { id })
 })
 
 financeRoutes.get('/summary', async (c) => {
-  const accounts = await db.select().from(financeAccounts)
-  const txs = await db.select().from(transactions)
-  const summary = accounts.reduce(
-    (acc, account) => {
-      const balance = txs
-        .filter((tx) => tx.financeAccountId === account.id)
-        .reduce(
-          (sum, tx) =>
-            sum + (tx.type === 'income' ? toNumber(tx.amount) : -toNumber(tx.amount)),
-          0,
-        )
+  const summary = await cached('finance:summary', 60, async () => {
+    const accounts = await db.select().from(financeAccounts)
+    const txs = await db.select().from(transactions)
+    const result = accounts.reduce(
+      (acc, account) => {
+        const balance = txs
+          .filter((tx) => tx.financeAccountId === account.id)
+          .reduce(
+            (sum, tx) =>
+              sum + (tx.type === 'income' ? toNumber(tx.amount) : -toNumber(tx.amount)),
+            0,
+          )
 
-      if (account.type === 'cash') acc.totalCash += balance
-      if (account.type === 'bank') acc.totalBank += balance
-      return acc
-    },
-    { totalCash: 0, totalBank: 0, netPosition: 0 },
-  )
+        if (account.type === 'cash') acc.totalCash += balance
+        if (account.type === 'bank') acc.totalBank += balance
+        return acc
+      },
+      { totalCash: 0, totalBank: 0, netPosition: 0 },
+    )
+    result.netPosition = result.totalCash + result.totalBank
+    return result
+  })
   summary.netPosition = summary.totalCash + summary.totalBank
   return ok(c, summary)
 })

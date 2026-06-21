@@ -13,6 +13,11 @@
     "start:server": "node server/dist/server/index.js",
     "start": "next start",
     "lint": "tsc --noEmit",
+    "test": "vitest run server --environment node --pool vmThreads --exclude server/dist/**",
+    "test:watch": "vitest server --environment node --pool vmThreads --exclude server/dist/**",
+    "test:coverage": "vitest run server --environment node --pool vmThreads --exclude server/dist/** --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx --env-file=.env server/db/seed.ts"
@@ -20,13 +25,21 @@
   "dependencies": {
     "@base-ui/react": "^1.5.0",
     "@hono/node-server": "^2.0.5",
+    "@hono/zod-validator": "^0.8.0",
+    "@tanstack/react-query": "^5.101.0",
     "@types/nodemailer": "^8.0.1",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.0",
     "@vercel/analytics": "1.6.1",
+    "bullmq": "^5.79.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
+    "eventemitter3": "^5.0.4",
     "hono": "^4.12.26",
+    "ioredis": "^5.11.1",
+    "isomorphic-dompurify": "^3.18.0",
     "jose": "^6.2.3",
     "lucide-react": "^1.16.0",
     "next": "16.2.6",
@@ -36,6 +49,7 @@
     "postgres": "^3.4.9",
     "react": "^19",
     "react-dom": "^19",
+    "react-is": "^19.2.7",
     "recharts": "^3.8.1",
     "shadcn": "^4.8.0",
     "sonner": "^2.0.7",
@@ -45,13 +59,19 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@tailwindcss/postcss": "^4.2.0",
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/supertest": "^7.2.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "msw": "^2.14.6",
     "postcss": "^8.5",
+    "supertest": "^7.2.2",
     "tailwindcss": "^4.2.0",
-    "typescript": "5.7.3"
+    "typescript": "5.7.3",
+    "vitest": "^4.1.9"
   },
   "pnpm": {
     "overrides": {

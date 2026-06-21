@@ -1,5 +1,6 @@
 import { createMiddleware } from 'hono/factory'
 import type { ZodSchema } from 'zod'
+import { sanitizeValue } from './sanitize'
 
 export function validate<T>(schema: ZodSchema<T>) {
   return createMiddleware(async (c, next) => {
@@ -19,7 +20,7 @@ export function validate<T>(schema: ZodSchema<T>) {
       )
     }
 
-    const result = schema.safeParse(body)
+    const result = schema.safeParse(sanitizeValue(body))
 
     if (!result.success) {
       return c.json(

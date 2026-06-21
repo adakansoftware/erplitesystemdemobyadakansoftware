@@ -9,25 +9,30 @@ import {
   stockMovements,
   transactions,
 } from '../db/schema'
+import { cached } from '../lib/cache'
 import { ok } from '../lib/http'
 import { toNumber } from '../lib/serializers'
 
 export const reportsRoutes = new Hono()
 
 reportsRoutes.get('/sales-summary', async (c) => {
-  const [invoiceItems, lineItems] = await Promise.all([
-    db.select().from(invoices),
-    db.select().from(invoiceLines),
-  ])
-  const totalRevenue = lineItems.reduce((sum, line) => {
-    const base = toNumber(line.quantity) * toNumber(line.unitPrice)
-    return sum + base + base * (toNumber(line.taxRate) / 100)
-  }, 0)
-  return ok(c, {
-    totalRevenue,
-    invoiceCount: invoiceItems.length,
-    avgOrderValue: invoiceItems.length ? totalRevenue / invoiceItems.length : 0,
+  const period = c.req.query('period') ?? 'month'
+  const data = await cached(`reports:sales:${period}`, 300, async () => {
+    const [invoiceItems, lineItems] = await Promise.all([
+      db.select().from(invoices),
+      db.select().from(invoiceLines),
+    ])
+    const totalRevenue = lineItems.reduce((sum, line) => {
+      const base = toNumber(line.quantity) * toNumber(line.unitPrice)
+      return sum + base + base * (toNumber(line.taxRate) / 100)
+    }, 0)
+    return {
+      totalRevenue,
+      invoiceCount: invoiceItems.length,
+      avgOrderValue: invoiceItems.length ? totalRevenue / invoiceItems.length : 0,
+    }
   })
+  return ok(c, data)
 })
 
 reportsRoutes.get('/stock-value', async (c) => {
@@ -50,18 +55,22 @@ reportsRoutes.get('/stock-value', async (c) => {
 })
 
 reportsRoutes.get('/cash-flow', async (c) => {
-  const items = await db.select().from(transactions)
-  const dailySeries = items.map((item) => ({
-    date: item.date,
-    income: item.type === 'income' ? toNumber(item.amount) : 0,
-    expense: item.type === 'expense' ? toNumber(item.amount) : 0,
-    net: item.type === 'income' ? toNumber(item.amount) : -toNumber(item.amount),
-  }))
-  return ok(c, {
-    dailySeries,
-    totalIncome: dailySeries.reduce((sum, item) => sum + item.income, 0),
-    totalExpense: dailySeries.reduce((sum, item) => sum + item.expense, 0),
+  const period = c.req.query('period') ?? 'month'
+  const data = await cached(`reports:cashflow:${period}`, 300, async () => {
+    const items = await db.select().from(transactions)
+    const dailySeries = items.map((item) => ({
+      date: item.date,
+      income: item.type === 'income' ? toNumber(item.amount) : 0,
+      expense: item.type === 'expense' ? toNumber(item.amount) : 0,
+      net: item.type === 'income' ? toNumber(item.amount) : -toNumber(item.amount),
+    }))
+    return {
+      dailySeries,
+      totalIncome: dailySeries.reduce((sum, item) => sum + item.income, 0),
+      totalExpense: dailySeries.reduce((sum, item) => sum + item.expense, 0),
+    }
   })
+  return ok(c, data)
 })
 
 reportsRoutes.get('/crm-funnel', async (c) => {

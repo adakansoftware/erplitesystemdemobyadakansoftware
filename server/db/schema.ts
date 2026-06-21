@@ -1,7 +1,9 @@
 import {
   boolean,
   date,
+  index,
   integer,
+  jsonb,
   numeric,
   pgTable,
   text,
@@ -19,6 +21,30 @@ export const users = pgTable('users', {
   active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
+export const refreshTokens = pgTable('refresh_tokens', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  token: varchar('token', { length: 500 }).notNull().unique(),
+  expiresAt: timestamp('expires_at').notNull(),
+  revoked: boolean('revoked').notNull().default(false),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
+export const auditLogs = pgTable('audit_logs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id),
+  action: varchar('action', { length: 50 }).notNull(),
+  entity: varchar('entity', { length: 50 }).notNull(),
+  entityId: varchar('entity_id', { length: 50 }),
+  oldValues: jsonb('old_values'),
+  newValues: jsonb('new_values'),
+  ip: varchar('ip', { length: 45 }),
+  userAgent: varchar('user_agent', { length: 500 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
 export const companySettings = pgTable('company_settings', {
@@ -291,3 +317,38 @@ export const transactions = pgTable('transactions', {
   createdBy: uuid('created_by').references(() => users.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
+
+export const invoicesIdx = {
+  byStatus: index('inv_status_idx').on(invoices.status),
+  byDueDate: index('inv_due_idx').on(invoices.dueDate),
+  byAccountDate: index('inv_acc_date_idx').on(invoices.currentAccountId, invoices.issueDate),
+}
+
+export const stockMovementsIdx = {
+  byProduct: index('sm_product_idx').on(stockMovements.productId),
+  byDate: index('sm_date_idx').on(stockMovements.createdAt),
+  byRelated: index('sm_related_idx').on(
+    stockMovements.relatedDocType,
+    stockMovements.relatedDocId,
+  ),
+}
+
+export const transactionsIdx = {
+  byAccount: index('trx_account_idx').on(transactions.financeAccountId),
+  byDate: index('trx_date_idx').on(transactions.date),
+}
+
+export const tasksIdx = {
+  byDone: index('task_done_idx').on(tasks.done, tasks.due),
+}
+
+export const refreshTokensIdx = {
+  byUser: index('refresh_tokens_user_idx').on(refreshTokens.userId),
+  byExpiry: index('refresh_tokens_expiry_idx').on(refreshTokens.expiresAt),
+}
+
+export const auditLogsIdx = {
+  byEntity: index('audit_logs_entity_idx').on(auditLogs.entity, auditLogs.entityId),
+  byUser: index('audit_logs_user_idx').on(auditLogs.userId),
+  byCreatedAt: index('audit_logs_created_idx').on(auditLogs.createdAt),
+}

@@ -3,6 +3,9 @@ import { and, eq, ilike, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { currentAccounts, invoiceLines, invoices } from '../db/schema'
+import { audit } from '../lib/audit'
+import { invalidate } from '../lib/cache'
+import { eventBus } from '../lib/event-bus'
 import { nextDocumentId } from '../lib/ids'
 import {
   createInvoicePaymentTransaction,
@@ -101,6 +104,7 @@ invoicesRoutes.get('/:id', async (c) => {
 
 invoicesRoutes.post('/', validate(invoiceSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof invoiceSchema>
+  const user = c.get('user') as { id?: string } | undefined
   const stockCheck = await ensureStockAvailable(
     body.lines.map((line) => ({
       productId: line.productId ?? null,
@@ -135,6 +139,19 @@ invoicesRoutes.post('/', validate(invoiceSchema), async (c) => {
     })),
   )
   await createStockOutForInvoice(id)
+  await invalidate('reports:sales:*')
+  await invalidate('reports:cashflow:*')
+  await invalidate('products:*')
+  await audit({
+    userId: user?.id,
+    action: 'create',
+    entity: 'invoice',
+    entityId: id,
+    newValues: body,
+    ip: c.req.header('x-forwarded-for'),
+    userAgent: c.req.header('user-agent'),
+  })
+  eventBus.emit('invoice.created', { invoiceId: id, userId: user?.id })
   return created(c, { id })
 })
 
@@ -143,11 +160,20 @@ invoicesRoutes.put('/:id/status', validate(z.object({ status: z.string() })), as
   const body = c.get('validatedBody') as { status: string }
   await db.update(invoices).set({ status: body.status, updatedAt: new Date() }).where(eq(invoices.id, id))
   if (body.status === 'paid') {
-    await createInvoicePaymentTransaction(id)
+    const total = await createInvoicePaymentTransaction(
+      id,
+      (c.get('user') as { id?: string } | undefined)?.id,
+    )
     const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id))
     const [account] = invoice?.currentAccountId
       ? await db.select().from(currentAccounts).where(eq(currentAccounts.id, invoice.currentAccountId))
       : [null]
+
+    eventBus.emit('invoice.paid', {
+      invoiceId: id,
+      amount: total,
+      userId: (c.get('user') as { id?: string } | undefined)?.id,
+    })
 
     if (invoice && account?.email) {
       await sendMail(
@@ -157,6 +183,7 @@ invoicesRoutes.put('/:id/status', validate(z.object({ status: z.string() })), as
       )
     }
   }
+  await invalidate('reports:cashflow:*')
   return ok(c, { id, status: body.status })
 })
 
@@ -232,6 +259,9 @@ invoicesRoutes.put('/:id', validate(invoiceSchema), async (c) => {
   )
 
   await createStockOutForInvoice(id)
+  await invalidate('reports:sales:*')
+  await invalidate('reports:cashflow:*')
+  await invalidate('products:*')
   return ok(c, { id })
 })
 
@@ -243,5 +273,7 @@ invoicesRoutes.delete('/:id', requireRole('admin', 'manager'), async (c) => {
   }
   await db.delete(invoiceLines).where(eq(invoiceLines.invoiceId, id))
   await db.delete(invoices).where(eq(invoices.id, id))
+  await invalidate('reports:sales:*')
+  await invalidate('reports:cashflow:*')
   return ok(c, { id })
 })

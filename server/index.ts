@@ -4,10 +4,66 @@ import { eq, inArray } from 'drizzle-orm'
 import { app } from './app'
 import { db } from './db/client'
 import { currentAccounts, invoices, users } from './db/schema'
+import { eventBus } from './lib/event-bus'
 import { logger } from './lib/logger'
-import { sendMail } from './lib/mailer'
+import { sendQueuedMail } from './lib/queue'
+import { notifyUser } from './lib/ws'
 
 const port = Number(process.env.PORT ?? 3001)
+
+eventBus.on('invoice.created', ({ invoiceId, userId }) => {
+  if (!userId) {
+    return
+  }
+
+  notifyUser(userId, 'invoice.created', { invoiceId })
+})
+
+eventBus.on('invoice.paid', async ({ invoiceId, amount, userId }) => {
+  if (userId) {
+    notifyUser(userId, 'invoice.paid', { invoiceId, amount })
+  }
+
+  logger.info(`Invoice paid: ${invoiceId} (${amount})`)
+})
+
+eventBus.on('quotation.accepted', ({ quotationId, invoiceId, userId }) => {
+  if (!userId) {
+    return
+  }
+
+  notifyUser(userId, 'quotation.accepted', { quotationId, invoiceId })
+})
+
+eventBus.on('purchase.received', ({ purchaseId, userId }) => {
+  if (!userId) {
+    return
+  }
+
+  notifyUser(userId, 'purchase.received', { purchaseId })
+})
+
+eventBus.on('stock.low', async ({ productId, qty, threshold }) => {
+  const admins = await db.select().from(users).where(eq(users.role, 'admin'))
+  const html = `
+    <p>Kritik stok bildirimi olustu.</p>
+    <p>Urun: ${productId}</p>
+    <p>Mevcut stok: ${qty}</p>
+    <p>Esik deger: ${threshold}</p>
+  `
+
+  await Promise.all(
+    admins
+      .filter((admin) => admin.active)
+      .map((admin) =>
+        sendQueuedMail({
+          to: admin.email,
+          subject: `Kritik stok uyarisi - ${productId}`,
+          html,
+        }),
+      ),
+  )
+})
 
 cron.schedule('0 8 * * *', async () => {
   const today = new Date().toISOString().slice(0, 10)
@@ -49,7 +105,32 @@ cron.schedule('0 8 * * *', async () => {
   await Promise.all(
     admins
       .filter((admin) => admin.active)
-      .map((admin) => sendMail(admin.email, 'Gecikmis Fatura Ozeti', html)),
+      .map((admin) =>
+        sendQueuedMail({
+          to: admin.email,
+          subject: 'Gecikmis Fatura Ozeti',
+          html,
+        }),
+      ),
+  )
+})
+
+cron.schedule('0 * * * *', async () => {
+  const today = new Date().toISOString().slice(0, 10)
+  const overdueInvoices = await db
+    .select()
+    .from(invoices)
+    .where(eq(invoices.status, 'sent'))
+
+  await Promise.all(
+    overdueInvoices
+      .filter((invoice) => invoice.dueDate < today)
+      .map((invoice) =>
+        db
+          .update(invoices)
+          .set({ status: 'overdue', updatedAt: new Date() })
+          .where(eq(invoices.id, invoice.id)),
+      ),
   )
 })
 

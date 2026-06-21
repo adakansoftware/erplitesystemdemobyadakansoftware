@@ -40,6 +40,9 @@ copy .env.example .env
 
 - `DATABASE_URL`
 - `JWT_SECRET`
+- `REDIS_URL`
+- `UPSTASH_REDIS_REST_URL`
+- `UPSTASH_REDIS_REST_TOKEN`
 - `SMTP_HOST`
 - `SMTP_PORT`
 - `SMTP_USER`
@@ -97,6 +100,8 @@ npm run dev:api:watch
 - `PORT`: Hono API portu
 - `APP_ORIGIN`: Next.js frontend URL'i. CORS izinleri bu adres uzerinden verilir.
 - `API_PROXY_TARGET`: Next.js proxy'nin yonlendirecegi Hono backend adresi.
+- `REDIS_URL`: BullMQ ve cache katmani icin Redis baglanti adresi.
+- `UPSTASH_REDIS_REST_*`: rate limiting icin serverless Redis bilgileri.
 - `SMTP_*`: bildirim e-postalari icin SMTP ayarlari
 
 ## Kalite Kontrolleri
@@ -105,6 +110,8 @@ npm run dev:api:watch
 npm run lint
 npm run build
 npm run build:api
+npm run test
+npm run test:coverage
 ```
 
 ## Notlar
@@ -112,3 +119,5 @@ npm run build:api
 - Frontend istekleri `/api` uzerinden Next proxy ile backend'e gider.
 - Auth cookie tabanli calisir ve demo ile cekirdek urun ayni kod tabanini kullanir.
 - `server/dist` build ciktilari artik git'te tutulmaz; kaynak kod `server/` altindadir.
+- `vitest` konfiguru Windows ve CI ortaminda `server/dist` klasorunu dislar, coverage esigini %70 olarak uygular.
+- Playwright iskeleti `e2e/` altindadir ve varsayilan olarak `PLAYWRIGHT_BASE_URL` ya da `http://127.0.0.1:3000` kullanir.

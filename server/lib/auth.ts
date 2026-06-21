@@ -11,17 +11,25 @@ function secret() {
   return encoder.encode(value)
 }
 
-export async function signToken(payload: Record<string, unknown>) {
+export async function signAccessToken(payload: Record<string, unknown>) {
   return new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('8h')
+    .setExpirationTime('15m')
     .sign(secret())
+}
+
+export async function signToken(payload: Record<string, unknown>) {
+  return signAccessToken(payload)
 }
 
 export async function verifyToken(token: string) {
   const result = await jwtVerify(token, secret())
   return result.payload
+}
+
+export function createRefreshToken() {
+  return randomBytes(48).toString('hex')
 }
 
 export function hashPassword(password: string) {

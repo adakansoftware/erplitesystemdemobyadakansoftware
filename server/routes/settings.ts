@@ -3,6 +3,8 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { companySettings } from '../db/schema'
+import { audit } from '../lib/audit'
+import { cached, invalidate } from '../lib/cache'
 import { ok } from '../lib/http'
 import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
@@ -23,19 +25,34 @@ const settingsSchema = z.object({
 export const settingsRoutes = new Hono()
 
 settingsRoutes.get('/', async (c) => {
-  const [row] = await db.select().from(companySettings).where(eq(companySettings.id, 1))
-  return ok(c, row ?? null)
+  const row = await cached('settings:company', 3600, async () => {
+    const [settings] = await db.select().from(companySettings).where(eq(companySettings.id, 1))
+    return settings ?? null
+  })
+  return ok(c, row)
 })
 
 settingsRoutes.put('/', requireRole('admin'), validate(settingsSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof settingsSchema>
+  const [previous] = await db.select().from(companySettings).where(eq(companySettings.id, 1))
   await db
     .insert(companySettings)
     .values({ id: 1, ...body, updatedAt: new Date() })
     .onConflictDoUpdate({
       target: companySettings.id,
       set: { ...body, updatedAt: new Date() },
-    })
+  })
   const [row] = await db.select().from(companySettings).where(eq(companySettings.id, 1))
+  await invalidate('settings:*')
+  await audit({
+    userId: (c.get('user') as { id?: string } | undefined)?.id,
+    action: 'update',
+    entity: 'settings',
+    entityId: 'company',
+    oldValues: previous ?? null,
+    newValues: row,
+    ip: c.req.header('x-forwarded-for'),
+    userAgent: c.req.header('user-agent'),
+  })
   return ok(c, row)
 })
