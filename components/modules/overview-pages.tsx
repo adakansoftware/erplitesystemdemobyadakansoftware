@@ -87,6 +87,39 @@ function normalize(value: string) {
     .trim()
 }
 
+function parseIsoDate(value: string) {
+  return new Date(`${value}T00:00:00`)
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function getReferenceDate(values: string[]) {
+  const sorted = values.filter(Boolean).sort((a, b) => a.localeCompare(b))
+  return sorted.length ? parseIsoDate(sorted[sorted.length - 1]) : new Date()
+}
+
+function isWithinPeriod(value: string, period: 'month' | 'quarter' | 'year' | 'all', referenceDate: Date) {
+  if (period === 'all') {
+    return true
+  }
+
+  const date = parseIsoDate(value)
+  const end = startOfDay(referenceDate)
+  const start = new Date(end)
+
+  if (period === 'month') {
+    start.setMonth(start.getMonth() - 1)
+  } else if (period === 'quarter') {
+    start.setMonth(start.getMonth() - 3)
+  } else {
+    start.setFullYear(start.getFullYear() - 1)
+  }
+
+  return date >= start && date <= end
+}
+
 export function DashboardPageClient() {
   const { financeAccounts, invoices, products, quotations } = useErpCollections()
 
@@ -724,14 +757,55 @@ export function StockPageClient() {
 export function ReportsPageClient() {
   const { deals, invoices, leads, products, quotations, transactions, warehouses } = useErpCollections()
   const [reportTab, setReportTab] = useState('summary')
+  const [period, setPeriod] = useState<'month' | 'quarter' | 'year' | 'all'>('quarter')
 
-  const monthlyRevenue = invoices
+  const referenceDate = useMemo(
+    () =>
+      getReferenceDate([
+        ...invoices.map((item) => item.issueDate),
+        ...quotations.map((item) => item.date),
+        ...transactions.map((item) => item.date),
+        ...leads.map((item) => item.createdAt),
+      ]),
+    [invoices, leads, quotations, transactions],
+  )
+
+  const filteredInvoices = useMemo(
+    () =>
+      invoices.filter((item) =>
+        isWithinPeriod(item.issueDate, period, referenceDate),
+      ),
+    [invoices, period, referenceDate],
+  )
+  const filteredQuotations = useMemo(
+    () =>
+      quotations.filter((item) =>
+        isWithinPeriod(item.date, period, referenceDate),
+      ),
+    [period, quotations, referenceDate],
+  )
+  const filteredTransactions = useMemo(
+    () =>
+      transactions.filter((item) =>
+        isWithinPeriod(item.date, period, referenceDate),
+      ),
+    [period, referenceDate, transactions],
+  )
+  const filteredLeads = useMemo(
+    () =>
+      leads.filter((item) =>
+        isWithinPeriod(item.createdAt, period, referenceDate),
+      ),
+    [leads, period, referenceDate],
+  )
+
+  const monthlyRevenue = filteredInvoices
     .filter((item) => item.status === 'paid')
     .reduce((sum, item) => sum + invoiceTotals(item.lines).total, 0)
-  const openReceivables = invoices
+  const openReceivables = filteredInvoices
     .filter((item) => item.status === 'sent' || item.status === 'overdue')
     .reduce((sum, item) => sum + invoiceTotals(item.lines).total, 0)
-  const quotationVolume = quotations.reduce(
+  const quotationVolume = filteredQuotations.reduce(
     (sum, item) => sum + quotationTotals(item.lines).total,
     0,
   )
@@ -740,7 +814,7 @@ export function ReportsPageClient() {
   )
 
   const topCustomers = useMemo(() => {
-    const totals = invoices.reduce<Record<string, number>>((accumulator, invoice) => {
+    const totals = filteredInvoices.reduce<Record<string, number>>((accumulator, invoice) => {
       const total = invoiceTotals(invoice.lines).total
       accumulator[invoice.customer] = (accumulator[invoice.customer] ?? 0) + total
       return accumulator
@@ -749,10 +823,10 @@ export function ReportsPageClient() {
     return Object.entries(totals)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
-  }, [invoices])
+  }, [filteredInvoices])
 
   const quotationBreakdown = Object.entries(
-    quotations.reduce<Record<string, number>>((accumulator, quotation) => {
+    filteredQuotations.reduce<Record<string, number>>((accumulator, quotation) => {
       accumulator[quotation.status] = (accumulator[quotation.status] ?? 0) + 1
       return accumulator
     }, {}),
@@ -767,7 +841,7 @@ export function ReportsPageClient() {
       monthMap.set(key, 0)
     }
 
-    invoices.forEach((invoice) => {
+    filteredInvoices.forEach((invoice) => {
       const monthKey = invoice.issueDate.slice(0, 7)
       if (monthMap.has(monthKey)) {
         monthMap.set(
@@ -781,10 +855,10 @@ export function ReportsPageClient() {
       month: month.slice(5).replace('-', '/'),
       ciro: Number(total.toFixed(2)),
     }))
-  }, [invoices])
+  }, [filteredInvoices])
 
   const cashflowData = useMemo(() => {
-    const grouped = transactions.reduce<Record<string, { gelir: number; gider: number }>>(
+    const grouped = filteredTransactions.reduce<Record<string, { gelir: number; gider: number }>>(
       (accumulator, transaction) => {
         const key = transaction.date
         accumulator[key] ??= { gelir: 0, gider: 0 }
@@ -806,29 +880,31 @@ export function ReportsPageClient() {
         gelir: totals.gelir,
         gider: totals.gider,
       }))
-  }, [transactions])
+  }, [filteredTransactions])
 
   const crmFunnelData = useMemo(() => {
-    const qualified = leads.filter((lead) => lead.status === 'qualified').length
+    const qualified = filteredLeads.filter((lead) => lead.status === 'qualified').length
     const activeDeals = deals.filter((deal) => !['lost'].includes(deal.stage)).length
     const wonDeals = deals.filter((deal) => deal.stage === 'won').length
 
     return [
-      { stage: 'Lead', count: leads.length },
+      { stage: 'Lead', count: filteredLeads.length },
       { stage: 'Qualified', count: qualified },
       { stage: 'Deal', count: activeDeals },
       { stage: 'Won', count: wonDeals },
     ]
-  }, [deals, leads])
+  }, [deals, filteredLeads])
 
-  const totalIncome = transactions
+  const totalIncome = filteredTransactions
     .filter((transaction) => transaction.type === 'income')
     .reduce((sum, transaction) => sum + transaction.amount, 0)
-  const totalExpense = transactions
+  const totalExpense = filteredTransactions
     .filter((transaction) => transaction.type === 'expense')
     .reduce((sum, transaction) => sum + transaction.amount, 0)
   const netCashPosition = totalIncome - totalExpense
-  const crmConversionRate = leads.length ? (crmFunnelData[3].count / leads.length) * 100 : 0
+  const crmConversionRate = filteredLeads.length
+    ? (crmFunnelData[3].count / filteredLeads.length) * 100
+    : 0
 
   const salesChartConfig = {
     ciro: { label: 'Ciro', color: 'var(--chart-1)' },
@@ -848,7 +924,24 @@ export function ReportsPageClient() {
       <PageHeader
         title="Raporlar"
         description="Satis, tahsilat ve stok performansini yonetim ozetleriyle izleyin."
-      />
+      >
+        <Select
+          value={period}
+          onValueChange={(value) =>
+            setPeriod(value as 'month' | 'quarter' | 'year' | 'all')
+          }
+        >
+          <SelectTrigger className="w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="month">Son 1 Ay</SelectItem>
+            <SelectItem value="quarter">Son 3 Ay</SelectItem>
+            <SelectItem value="year">Son 12 Ay</SelectItem>
+            <SelectItem value="all">Tum Veriler</SelectItem>
+          </SelectContent>
+        </Select>
+      </PageHeader>
 
       <MetricGrid
         items={[
@@ -908,7 +1001,7 @@ export function ReportsPageClient() {
               contentClassName="space-y-3"
             >
               {Object.entries(
-                invoices.reduce<Record<string, number>>((accumulator, invoice) => {
+                filteredInvoices.reduce<Record<string, number>>((accumulator, invoice) => {
                   accumulator[invoice.status] = (accumulator[invoice.status] ?? 0) + 1
                   return accumulator
                 }, {}),

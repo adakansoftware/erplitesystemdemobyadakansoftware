@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Building2, Wallet } from 'lucide-react'
@@ -7,7 +9,7 @@ import { useAppSettings, type AppSettings } from '@/hooks/use-app-settings'
 import { useAuth } from '@/hooks/use-auth'
 import { useErpCollections } from '@/hooks/use-erp-store'
 import { PageHeader } from '@/components/shared/page-header'
-import { MetricGrid, SectionCard } from '@/components/shared/module-primitives'
+import { DetailList, MetricGrid, SectionCard } from '@/components/shared/module-primitives'
 import { SearchInput } from '@/components/shared/search-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -255,7 +257,8 @@ export function CurrentAccountsPageClient() {
                 <TableHead>Telefon</TableHead>
                 <TableHead className="text-right">Bakiye</TableHead>
                 <TableHead className="text-right">Limit</TableHead>
-                <TableHead className="pr-6 text-right">Durum</TableHead>
+                <TableHead>Durum</TableHead>
+                <TableHead className="pr-6 text-right">Detay</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -294,8 +297,17 @@ export function CurrentAccountsPageClient() {
                     <TableCell className="text-right text-muted-foreground">
                       {formatCurrency(account.creditLimit)}
                     </TableCell>
-                    <TableCell className="pr-6 text-right">
+                    <TableCell>
                       <Badge variant={meta.variant}>{meta.label}</Badge>
+                    </TableCell>
+                    <TableCell className="pr-6 text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        render={
+                          <Link href={`/cari-hesaplar/${account.id}`}>Ekstre</Link>
+                        }
+                      />
                     </TableCell>
                   </TableRow>
                 )
@@ -381,6 +393,178 @@ export function CurrentAccountsPageClient() {
           ))}
         </SectionCard>
       </div>
+    </>
+  )
+}
+
+export function CurrentAccountDetailPageClient() {
+  const params = useParams<{ id: string }>()
+  const { currentAccounts, getCurrentAccountById, getStatementByAccountId, invoices, quotations } =
+    useErpCollections()
+  const account = getCurrentAccountById(params.id)
+
+  if (!account) {
+    return (
+      <SectionCard
+        title="Cari Hesap Bulunamadi"
+        description="Istenen cari karti mevcut kayitlarda yer almiyor."
+      >
+        <Button render={<Link href="/cari-hesaplar">Cari listeye don</Link>} />
+      </SectionCard>
+    )
+  }
+
+  const statement = getStatementByAccountId(account.id)
+  const accountInvoices = invoices.filter((invoice) => invoice.customer === account.name)
+  const accountQuotations = quotations.filter(
+    (quotation) => quotation.customer === account.name,
+  )
+  const meta = balanceMeta(account.balance)
+  const avgInvoice =
+    accountInvoices.length > 0
+      ? accountInvoices.reduce(
+          (sum, invoice) => sum + invoice.lines.reduce((lineSum, line) => lineSum + line.quantity * line.unitPrice * (1 + line.taxRate / 100), 0),
+          0,
+        ) / accountInvoices.length
+      : 0
+
+  return (
+    <>
+      <PageHeader
+        title={account.name}
+        description={`${account.id} kodlu cari hesap icin bakiye, ekstre ve belge ozetleri.`}
+      >
+        <Button variant="outline" render={<Link href="/cari-hesaplar">Listeye Don</Link>} />
+      </PageHeader>
+
+      <MetricGrid
+        items={[
+          { label: 'Cari Tipi', value: account.type === 'customer' ? 'Musteri' : 'Tedarikci' },
+          {
+            label: 'Guncel Bakiye',
+            value: formatCurrency(account.balance),
+            badge: meta.label,
+            badgeVariant: meta.variant,
+          },
+          { label: 'Kredi Limiti', value: formatCurrency(account.creditLimit) },
+          { label: 'Ortalama Belge', value: formatCurrency(avgInvoice) },
+        ]}
+      />
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <SectionCard
+          title="Cari Kart"
+          description="Iletisim ve vergi bilgileri"
+          contentClassName="space-y-4"
+        >
+          <DetailList
+            items={[
+              { label: 'Cari Kod', value: account.id },
+              { label: 'Sehir', value: account.city },
+              { label: 'Telefon', value: account.phone },
+              { label: 'E-Posta', value: account.email },
+              { label: 'Vergi / TCKN', value: account.taxNumber },
+              {
+                label: 'Sistem Icindeki Pay',
+                value: `${formatNumber(
+                  Math.round((statement.length / Math.max(currentAccounts.length, 1)) * 100),
+                )}%`,
+              },
+            ]}
+          />
+        </SectionCard>
+
+        <SectionCard
+          title="Belge Ozetleri"
+          description="Cari uzerindeki teklif ve fatura akisinin kisa ozeti"
+          contentClassName="space-y-3"
+        >
+          <div className="rounded-lg border p-3 text-sm">
+            <p className="text-muted-foreground">Fatura Adedi</p>
+            <p className="mt-1 font-medium">{formatNumber(accountInvoices.length)}</p>
+          </div>
+          <div className="rounded-lg border p-3 text-sm">
+            <p className="text-muted-foreground">Teklif Adedi</p>
+            <p className="mt-1 font-medium">{formatNumber(accountQuotations.length)}</p>
+          </div>
+          <div className="space-y-2">
+            {accountInvoices.slice(0, 3).map((invoice) => (
+              <Link
+                key={invoice.id}
+                href={`/faturalar/${invoice.id}`}
+                className="flex items-center justify-between rounded-lg border p-3 text-sm transition-colors hover:bg-muted/50"
+              >
+                <span className="font-medium">{invoice.id}</span>
+                <Badge variant={balanceMeta(account.balance).variant}>
+                  {formatDate(invoice.issueDate)}
+                </Badge>
+              </Link>
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Hesap Durumu"
+          description="Bakiye gorunumu ve takip durumu"
+          contentClassName="space-y-3"
+        >
+          <div className="rounded-lg border p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Durum</span>
+              <Badge variant={meta.variant}>{meta.label}</Badge>
+            </div>
+            <div className="mt-4 flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Ekstre Satiri</span>
+              <span className="font-medium">{formatNumber(statement.length)}</span>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Acik Teklif</span>
+              <span className="font-medium">
+                {formatNumber(
+                  accountQuotations.filter((item) => ['draft', 'sent'].includes(item.status)).length,
+                )}
+              </span>
+            </div>
+          </div>
+        </SectionCard>
+      </div>
+
+      <SectionCard
+        title="Cari Ekstresi"
+        description="Borclu ve alacakli hareketlerin kronolojik listesi"
+        contentClassName="px-0"
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="pl-6">Tarih</TableHead>
+              <TableHead>Aciklama</TableHead>
+              <TableHead className="text-right">Borc</TableHead>
+              <TableHead className="text-right">Alacak</TableHead>
+              <TableHead className="pr-6 text-right">Bakiye</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {statement.map((row) => (
+              <TableRow key={row.id}>
+                <TableCell className="pl-6 text-muted-foreground">
+                  {formatDate(row.date)}
+                </TableCell>
+                <TableCell className="font-medium">{row.description}</TableCell>
+                <TableCell className="text-right">
+                  {row.credit ? formatCurrency(row.credit) : '-'}
+                </TableCell>
+                <TableCell className="text-right">
+                  {row.debit ? formatCurrency(row.debit) : '-'}
+                </TableCell>
+                <TableCell className="pr-6 text-right font-medium">
+                  {formatCurrency(row.balance)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </SectionCard>
     </>
   )
 }

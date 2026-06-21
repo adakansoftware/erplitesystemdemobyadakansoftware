@@ -345,7 +345,7 @@ export function NewInvoicePageClient() {
 
 export function InvoiceDetailPageClient() {
   const params = useParams<{ id: string }>()
-  const { getInvoiceById, hydrated, updateInvoice } = useErpCollections()
+  const { getInvoiceById, hydrated, updateInvoice, updateInvoiceStatus } = useErpCollections()
   const { settings } = useAppSettings()
   const invoice = getInvoiceById(params.id)
   const [isEditing, setIsEditing] = useState(false)
@@ -483,6 +483,18 @@ export function InvoiceDetailPageClient() {
     setIsEditing(false)
   }
 
+  async function handleStatusChange(status: typeof currentInvoice.status) {
+    const updated = await updateInvoiceStatus(currentInvoice.id, status)
+
+    if (!updated) {
+      toast.error('Fatura durumu guncellenemedi')
+      return
+    }
+
+    toast.success('Fatura durumu guncellendi')
+    setIsEditing(false)
+  }
+
   return (
     <>
       <div className="print-document print-only rounded-lg border p-6">
@@ -515,6 +527,25 @@ export function InvoiceDetailPageClient() {
         {draftEditable ? (
           <Button variant="outline" onClick={() => setIsEditing((current) => !current)}>
             {isEditing ? 'Duzenlemeyi Kapat' : 'Duzenle'}
+          </Button>
+        ) : null}
+        {currentInvoice.status === 'draft' ? (
+          <Button
+            variant="outline"
+            onClick={() => void handleStatusChange('sent')}
+          >
+            Gonderildi Olarak Isaretle
+          </Button>
+        ) : null}
+        {(currentInvoice.status === 'sent' || currentInvoice.status === 'overdue') ? (
+          <Button onClick={() => void handleStatusChange('paid')}>Tahsil Edildi</Button>
+        ) : null}
+        {currentInvoice.status !== 'paid' && currentInvoice.status !== 'cancelled' ? (
+          <Button
+            variant="outline"
+            onClick={() => void handleStatusChange('cancelled')}
+          >
+            Iptal Et
           </Button>
         ) : null}
         <Button variant="outline" onClick={() => window.print()}>

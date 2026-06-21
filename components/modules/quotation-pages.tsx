@@ -346,7 +346,12 @@ export function QuotationDetailPageClient() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const { settings } = useAppSettings()
-  const { convertQuotationToInvoice, getQuotationById, hydrated } = useErpCollections()
+  const {
+    convertQuotationToInvoice,
+    getQuotationById,
+    hydrated,
+    updateQuotationStatus,
+  } = useErpCollections()
   const quotation = getQuotationById(params.id)
 
   if (hydrated && !quotation) {
@@ -380,6 +385,17 @@ export function QuotationDetailPageClient() {
     router.push(`/faturalar/${nextInvoice.id}`)
   }
 
+  async function handleStatusChange(status: typeof currentQuotation.status) {
+    const updated = await updateQuotationStatus(currentQuotation.id, status)
+
+    if (!updated) {
+      toast.error('Teklif durumu guncellenemedi')
+      return
+    }
+
+    toast.success('Teklif durumu guncellendi')
+  }
+
   return (
     <>
       <div className="print-document print-only rounded-lg border p-6">
@@ -409,10 +425,44 @@ export function QuotationDetailPageClient() {
         description={`${currentQuotation.customer} icin hazirlanan teklifin detay gorunumu.`}
       >
         <Button variant="outline" render={<Link href="/teklifler">Listeye Don</Link>} />
+        {currentQuotation.status === 'draft' ? (
+          <Button
+            variant="outline"
+            onClick={() => void handleStatusChange('sent')}
+          >
+            Musteriye Gonder
+          </Button>
+        ) : null}
+        {currentQuotation.status === 'sent' ? (
+          <Button
+            variant="outline"
+            onClick={() => void handleStatusChange('accepted')}
+          >
+            Kabul Edildi
+          </Button>
+        ) : null}
+        {currentQuotation.status === 'sent' ? (
+          <Button
+            variant="outline"
+            onClick={() => void handleStatusChange('rejected')}
+          >
+            Reddedildi
+          </Button>
+        ) : null}
+        {(currentQuotation.status === 'draft' || currentQuotation.status === 'sent') ? (
+          <Button
+            variant="outline"
+            onClick={() => void handleStatusChange('expired')}
+          >
+            Suresi Doldu
+          </Button>
+        ) : null}
         <Button variant="outline" onClick={() => window.print()}>
           Yazdir / PDF
         </Button>
-        <Button onClick={() => void handleConvert()}>Faturaya Cevir</Button>
+        {!currentQuotation.relatedInvoice ? (
+          <Button onClick={() => void handleConvert()}>Faturaya Cevir</Button>
+        ) : null}
         <Button render={<Link href="/teklifler/yeni">Yeni Teklif</Link>} />
       </PageHeader>
 

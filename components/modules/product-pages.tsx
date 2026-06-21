@@ -22,6 +22,13 @@ import {
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Table,
   TableBody,
   TableCell,
@@ -149,8 +156,9 @@ export function ProductsPageClient() {
 
 export function NewProductPageClient() {
   const router = useRouter()
-  const { createProduct } = useErpCollections()
+  const { createProduct, createProductCategory, productCategories } = useErpCollections()
   const sampleProduct = products[0]
+  const [newCategoryName, setNewCategoryName] = useState('')
   const [form, setForm] = useState({
     name: sampleProduct.name,
     sku: 'PRD-1013',
@@ -182,6 +190,18 @@ export function NewProductPageClient() {
 
   function updateField<K extends keyof typeof form>(key: K, value: string) {
     setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  async function handleCreateCategory() {
+    const createdCategory = await createProductCategory(newCategoryName)
+    if (!createdCategory) {
+      toast.error('Kategori adi girin')
+      return
+    }
+
+    updateField('category', createdCategory)
+    setNewCategoryName('')
+    toast.success('Kategori eklendi')
   }
 
   async function handleSave() {
@@ -253,13 +273,37 @@ export function NewProductPageClient() {
             <div className="grid gap-4 md:grid-cols-2">
               <Field>
                 <FieldLabel htmlFor="product-category">Kategori</FieldLabel>
-                <Input
-                  id="product-category"
-                  value={form.category}
-                  onChange={(event) =>
-                    updateField('category', event.target.value)
-                  }
-                />
+                <div className="space-y-3">
+                  <Select
+                    value={form.category}
+                    onValueChange={(value) => updateField('category', value ?? '')}
+                  >
+                    <SelectTrigger id="product-category" className="w-full">
+                      <SelectValue placeholder="Kategori secin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {productCategories.map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex gap-2">
+                    <Input
+                      value={newCategoryName}
+                      onChange={(event) => setNewCategoryName(event.target.value)}
+                      placeholder="Yeni kategori ekle"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void handleCreateCategory()}
+                    >
+                      Ekle
+                    </Button>
+                  </div>
+                </div>
               </Field>
               <Field>
                 <FieldLabel htmlFor="product-brand">Marka</FieldLabel>
@@ -407,12 +451,20 @@ export function NewProductPageClient() {
 
 export function ProductDetailPageClient() {
   const params = useParams<{ id: string }>()
-  const { getProductById, updateProduct, addStockMovement, hydrated } = useErpCollections()
+  const {
+    getProductById,
+    updateProduct,
+    addStockMovement,
+    createProductCategory,
+    productCategories,
+    hydrated,
+  } = useErpCollections()
   const product = getProductById(params.id)
   const [isEditing, setIsEditing] = useState(false)
   const [stockModeOpen, setStockModeOpen] = useState(false)
   const [movementQty, setMovementQty] = useState('0')
   const [movementNote, setMovementNote] = useState('Sayim ve duzeltme hareketi.')
+  const [newCategoryName, setNewCategoryName] = useState('')
   const [form, setForm] = useState({
     name: '',
     sku: '',
@@ -474,6 +526,18 @@ export function ProductDetailPageClient() {
 
   function updateField<K extends keyof typeof form>(key: K, value: string) {
     setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  async function handleCreateCategory() {
+    const createdCategory = await createProductCategory(newCategoryName)
+    if (!createdCategory) {
+      toast.error('Kategori adi girin')
+      return
+    }
+
+    updateField('category', createdCategory)
+    setNewCategoryName('')
+    toast.success('Kategori eklendi')
   }
 
   async function handleSave() {
@@ -608,11 +672,37 @@ export function ProductDetailPageClient() {
               <div className="grid gap-4 md:grid-cols-2">
                 <Field>
                   <FieldLabel htmlFor="edit-category">Kategori</FieldLabel>
-                  <Input
-                    id="edit-category"
-                    value={form.category}
-                    onChange={(event) => updateField('category', event.target.value)}
-                  />
+                  <div className="space-y-3">
+                    <Select
+                      value={form.category}
+                      onValueChange={(value) => updateField('category', value ?? '')}
+                    >
+                      <SelectTrigger id="edit-category" className="w-full">
+                        <SelectValue placeholder="Kategori secin" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {productCategories.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            {category}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex gap-2">
+                      <Input
+                        value={newCategoryName}
+                        onChange={(event) => setNewCategoryName(event.target.value)}
+                        placeholder="Yeni kategori ekle"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void handleCreateCategory()}
+                      >
+                        Ekle
+                      </Button>
+                    </div>
+                  </div>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="edit-brand">Marka</FieldLabel>

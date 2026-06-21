@@ -2,9 +2,10 @@ import { Hono } from 'hono'
 import { and, eq, ilike, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
-import { invoiceLines, invoices, quotationLines, quotations } from '../db/schema'
+import { currentAccounts, invoiceLines, invoices, quotationLines, quotations } from '../db/schema'
 import { nextDocumentId } from '../lib/ids'
 import { created, fail, ok } from '../lib/http'
+import { sendMail } from '../lib/mailer'
 import { validate } from '../middleware/validate'
 
 const lineSchema = z.object({
@@ -121,7 +122,23 @@ quotationsRoutes.post('/', validate(quotationSchema), async (c) => {
 quotationsRoutes.put('/:id', validate(quotationSchema.partial()), async (c) => {
   const id = c.req.param('id')
   const body = c.get('validatedBody') as Partial<z.infer<typeof quotationSchema>>
+  const [existingQuotation] = await db.select().from(quotations).where(eq(quotations.id, id))
   await db.update(quotations).set({ ...body, updatedAt: new Date() }).where(eq(quotations.id, id))
+
+  if (body.status === 'sent') {
+    const [account] = existingQuotation?.currentAccountId
+      ? await db.select().from(currentAccounts).where(eq(currentAccounts.id, existingQuotation.currentAccountId))
+      : [null]
+
+    if (account?.email) {
+      await sendMail(
+        account.email,
+        `Teklif Gonderildi - ${existingQuotation.customer}`,
+        `<p>Sayin ${existingQuotation.customer}, teklifiniz ERP Lite uzerinden gonderildi.</p><p>Belge No: ${existingQuotation.id}</p>`,
+      )
+    }
+  }
+
   return ok(c, { id })
 })
 

@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { and, eq, ilike, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
-import { invoiceLines, invoices } from '../db/schema'
+import { currentAccounts, invoiceLines, invoices } from '../db/schema'
 import { nextDocumentId } from '../lib/ids'
 import {
   createInvoicePaymentTransaction,
@@ -11,6 +11,7 @@ import {
   getProductStock,
 } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
+import { sendMail } from '../lib/mailer'
 import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
 
@@ -143,6 +144,18 @@ invoicesRoutes.put('/:id/status', validate(z.object({ status: z.string() })), as
   await db.update(invoices).set({ status: body.status, updatedAt: new Date() }).where(eq(invoices.id, id))
   if (body.status === 'paid') {
     await createInvoicePaymentTransaction(id)
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id))
+    const [account] = invoice?.currentAccountId
+      ? await db.select().from(currentAccounts).where(eq(currentAccounts.id, invoice.currentAccountId))
+      : [null]
+
+    if (invoice && account?.email) {
+      await sendMail(
+        account.email,
+        `Tahsilat Makbuzu - ${invoice.id}`,
+        `<p>Sayin ${invoice.customer}, ${invoice.id} numarali faturanin odemesi tahsil edildi.</p>`,
+      )
+    }
   }
   return ok(c, { id, status: body.status })
 })

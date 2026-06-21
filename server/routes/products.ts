@@ -5,6 +5,7 @@ import { db } from '../db/client'
 import { productCategories, products, stockMovements, warehouses } from '../db/schema'
 import { attachProductStocks, getProductStock } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
+import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
 
 const createSchema = z.object({
@@ -25,6 +26,9 @@ const createSchema = z.object({
 })
 
 const updateSchema = createSchema.partial()
+const categorySchema = z.object({
+  name: z.string().min(2),
+})
 
 export const productsRoutes = new Hono()
 
@@ -96,6 +100,27 @@ productsRoutes.get('/low-stock', async (c) => {
   const result = await db.select().from(products)
   const withStocks = await attachProductStocks(result)
   return ok(c, withStocks.filter((item) => item.totalStock <= Number(item.reorderPoint)))
+})
+
+productsRoutes.get('/categories', async (c) => {
+  return ok(c, await db.select().from(productCategories))
+})
+
+productsRoutes.post('/categories', validate(categorySchema), async (c) => {
+  const body = c.get('validatedBody') as z.infer<typeof categorySchema>
+  const [existing] = await db.select().from(productCategories).where(eq(productCategories.name, body.name))
+  if (existing) {
+    return ok(c, existing)
+  }
+
+  const [createdCategory] = await db.insert(productCategories).values({ name: body.name }).returning()
+  return created(c, createdCategory)
+})
+
+productsRoutes.delete('/categories/:id', requireRole('admin'), async (c) => {
+  const id = c.req.param('id')
+  await db.delete(productCategories).where(eq(productCategories.id, id))
+  return ok(c, { id })
 })
 
 productsRoutes.get('/:id', async (c) => {

@@ -43,6 +43,7 @@ import {
 } from '@/lib/data/invoices'
 import {
   getStockStatus,
+  productCategories as initialProductCategories,
   products as initialProducts,
   productStatusMeta,
   type Product,
@@ -75,6 +76,7 @@ type StoreState = {
   hydrated: boolean
   error: string | null
   products: Product[]
+  productCategories: string[]
   invoices: Invoice[]
   quotations: Quotation[]
   purchases: PurchaseOrder[]
@@ -124,6 +126,7 @@ const initialState: StoreState = {
   hydrated: false,
   error: null,
   products: initialProducts,
+  productCategories: initialProductCategories,
   invoices: initialInvoices,
   quotations: initialQuotations,
   purchases: initialPurchases,
@@ -422,6 +425,7 @@ async function refreshStore() {
   pendingRefresh = (async () => {
     const [
       rawProducts,
+      rawProductCategories,
       rawInvoices,
       rawQuotations,
       rawPurchases,
@@ -437,6 +441,7 @@ async function refreshStore() {
       rawWarehouses,
     ] = await Promise.all([
       requestCollection('Urunler', api.get<any[]>('/products')),
+      requestCollection('Urun kategorileri', api.get<any[]>('/products/categories')),
       requestCollection('Faturalar', api.get<any[]>('/invoices')),
       requestCollection('Teklifler', api.get<any[]>('/quotations')),
       requestCollection('Satin alma', api.get<any[]>('/purchase-orders')),
@@ -454,6 +459,7 @@ async function refreshStore() {
 
     const collectionErrors = [
       rawProducts,
+      rawProductCategories,
       rawInvoices,
       rawQuotations,
       rawPurchases,
@@ -486,6 +492,22 @@ async function refreshStore() {
 
     const warehouseMap = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse]))
     const products = rawProducts.ok ? rawProducts.data.map(mapProduct) : storeState.products
+    const productCategories = rawProductCategories.ok
+      ? Array.from(
+          new Set(
+            rawProductCategories.data
+              .map((item: any) => item.name ?? '')
+              .filter(Boolean)
+              .concat(products.map((product) => product.category).filter(Boolean)),
+          ),
+        ).sort((a, b) => a.localeCompare(b, 'tr'))
+      : Array.from(
+          new Set(
+            storeState.productCategories.concat(
+              products.map((product) => product.category).filter(Boolean),
+            ),
+          ),
+        ).sort((a, b) => a.localeCompare(b, 'tr'))
     const transactions = rawTransactions.ok
       ? rawTransactions.data.map(mapTransaction)
       : storeState.transactions
@@ -546,6 +568,7 @@ async function refreshStore() {
       hydrated: true,
       error: collectionErrors.length ? collectionErrors.join(' | ') : null,
       products,
+      productCategories,
       invoices: rawInvoices.ok ? invoiceRows.map(mapInvoice) : storeState.invoices,
       quotations: rawQuotations.ok
         ? quotationRows.map(mapQuotation)
@@ -673,6 +696,20 @@ async function updateProductAction(
   return storeState.products.find((product) => product.id === id)
 }
 
+async function createProductCategoryAction(name: string) {
+  const trimmedName = name.trim()
+  if (!trimmedName) {
+    return null
+  }
+
+  await api.post('/products/categories', { name: trimmedName })
+  await refreshStore()
+  return (
+    storeState.productCategories.find((category) => category === trimmedName) ??
+    trimmedName
+  )
+}
+
 async function addStockMovementAction(payload: {
   productId?: string
   product?: string
@@ -742,6 +779,48 @@ async function createQuotationAction(payload: {
   return storeState.quotations.find((quotation) => quotation.id === created.id)
 }
 
+async function updateQuotationAction(
+  id: string,
+  payload: Partial<{
+    customer: string
+    date: string
+    validUntil: string
+    note: string
+    status: QuotationStatus
+    lines: QuotationLine[]
+  }>,
+) {
+  const requestBody: Record<string, unknown> = {}
+
+  if (payload.customer != null) {
+    const account = storeState.currentAccounts.find((item) => item.name === payload.customer)
+    requestBody.currentAccountId = account?.id
+    requestBody.customer = payload.customer
+  }
+
+  if (payload.date != null) requestBody.date = payload.date
+  if (payload.validUntil != null) requestBody.validUntil = payload.validUntil
+  if (payload.note != null) requestBody.note = payload.note
+  if (payload.status != null) requestBody.status = payload.status
+  if (payload.lines != null) {
+    requestBody.lines = payload.lines.map((line) => ({
+      productId: productIdByName(storeState.products, line.product) || undefined,
+      product: line.product,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      taxRate: line.taxRate,
+    }))
+  }
+
+  await api.put(`/quotations/${id}`, requestBody)
+  await refreshStore()
+  return storeState.quotations.find((quotation) => quotation.id === id) ?? null
+}
+
+async function updateQuotationStatusAction(id: string, status: QuotationStatus) {
+  return updateQuotationAction(id, { status })
+}
+
 async function convertQuotationToInvoiceAction(quotationId: string) {
   const result = await api.post<{ invoiceId: string }>(`/quotations/${quotationId}/convert-to-invoice`, {})
   await refreshStore()
@@ -809,6 +888,12 @@ async function updateInvoiceAction(
     })),
   })
 
+  await refreshStore()
+  return storeState.invoices.find((invoice) => invoice.id === id) ?? null
+}
+
+async function updateInvoiceStatusAction(id: string, status: Invoice['status']) {
+  await api.put(`/invoices/${id}/status`, { status })
   await refreshStore()
   return storeState.invoices.find((invoice) => invoice.id === id) ?? null
 }
@@ -1015,11 +1100,15 @@ export function useErpCollections() {
         state.currentAccounts.find((account) => account.id === id),
       getStatementByAccountId,
       createProduct: createProductAction,
+      createProductCategory: createProductCategoryAction,
       updateProduct: updateProductAction,
       addStockMovement: addStockMovementAction,
       createInvoice: createInvoiceAction,
       updateInvoice: updateInvoiceAction,
+      updateInvoiceStatus: updateInvoiceStatusAction,
       createQuotation: createQuotationAction,
+      updateQuotation: updateQuotationAction,
+      updateQuotationStatus: updateQuotationStatusAction,
       convertQuotationToInvoice: convertQuotationToInvoiceAction,
       createPurchaseOrder: createPurchaseOrderAction,
       updatePurchaseOrder: updatePurchaseOrderAction,
