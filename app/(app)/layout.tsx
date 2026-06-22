@@ -7,6 +7,7 @@ import { Topbar } from '@/components/layout/topbar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { useAuth } from '@/hooks/use-auth'
+import { useRealtime } from '@/hooks/use-realtime'
 
 export default function AppLayout({
   children,
@@ -16,6 +17,7 @@ export default function AppLayout({
   const router = useRouter()
   const pathname = usePathname()
   const { isAuthenticated, isReady } = useAuth()
+  useRealtime()
 
   useEffect(() => {
     if (isReady && !isAuthenticated && pathname !== '/login') {

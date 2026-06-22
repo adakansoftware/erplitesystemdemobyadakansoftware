@@ -1,4 +1,5 @@
 import createDOMPurify from 'isomorphic-dompurify'
+import { createMiddleware } from 'hono/factory'
 
 const DOMPurify = createDOMPurify()
 
@@ -12,3 +13,15 @@ export function sanitizeValue(value: unknown): unknown {
   }
   return value
 }
+
+export const sanitizeMiddleware = createMiddleware(async (c, next) => {
+  const body = c.req.header('content-type')?.includes('application/json')
+    ? await c.req.json().catch(() => undefined)
+    : undefined
+
+  if (body && typeof body === 'object') {
+    c.req.json = async <T>() => sanitizeValue(body) as T
+  }
+
+  await next()
+})

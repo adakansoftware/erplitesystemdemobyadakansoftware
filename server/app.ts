@@ -5,6 +5,8 @@ import { logger } from 'hono/logger'
 import { secureHeaders } from 'hono/secure-headers'
 import { authMiddleware } from './middleware/auth'
 import { authRateLimit, rateLimitMiddleware } from './middleware/rate-limit'
+import { sanitizeMiddleware } from './middleware/sanitize'
+import { tenantMiddleware } from './middleware/tenant'
 import { authRoutes } from './routes/auth'
 import { auditRoutes } from './routes/audit'
 import { crmRoutes } from './routes/crm'
@@ -46,6 +48,7 @@ app.use(
     referrerPolicy: 'strict-origin-when-cross-origin',
   }),
 )
+app.use('*', sanitizeMiddleware)
 app.use('*', rateLimitMiddleware)
 app.use('*', logger())
 
@@ -53,6 +56,7 @@ app.use('/auth/login', authRateLimit)
 app.route('/auth', authRoutes)
 
 app.use('*', authMiddleware)
+app.use('*', tenantMiddleware)
 app.route('/audit-logs', auditRoutes)
 app.route('/products', productsRoutes)
 app.route('/invoices', invoicesRoutes)

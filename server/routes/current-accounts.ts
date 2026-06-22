@@ -23,12 +23,14 @@ const accountSchema = z.object({
 export const currentAccountsRoutes = new Hono()
 
 currentAccountsRoutes.get('/', async (c) => {
+  const tenantId = c.get('tenantId')
   const type = c.req.query('type')
   const search = c.req.query('search')
   const page = Math.max(1, Number(c.req.query('page') ?? 1))
   const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
   const offset = (page - 1) * limit
   const filters: SQL[] = [
+    tenantId ? eq(currentAccounts.tenantId, tenantId) : undefined,
     type ? eq(currentAccounts.type, type) : undefined,
     search ? ilike(currentAccounts.name, `%${search}%`) : undefined,
     eq(currentAccounts.active, true),
@@ -59,10 +61,16 @@ currentAccountsRoutes.get('/', async (c) => {
 
 currentAccountsRoutes.get('/:id', async (c) => {
   const id = c.req.param('id')
+  const tenantId = c.get('tenantId')
   const [account] = await db
     .select()
     .from(currentAccounts)
-    .where(eq(currentAccounts.id, id))
+    .where(
+      and(
+        eq(currentAccounts.id, id),
+        ...(tenantId ? [eq(currentAccounts.tenantId, tenantId)] : []),
+      ),
+    )
   if (!account) {
     return fail(c, 404, 'Current account not found')
   }
@@ -72,6 +80,21 @@ currentAccountsRoutes.get('/:id', async (c) => {
 
 currentAccountsRoutes.get('/:id/statement', async (c) => {
   const id = c.req.param('id')
+  const tenantId = c.get('tenantId')
+  const [account] = await db
+    .select()
+    .from(currentAccounts)
+    .where(
+      and(
+        eq(currentAccounts.id, id),
+        ...(tenantId ? [eq(currentAccounts.tenantId, tenantId)] : []),
+      ),
+    )
+
+  if (!account) {
+    return fail(c, 404, 'Current account not found')
+  }
+
   const rows = await db
     .select()
     .from(transactions)
@@ -81,8 +104,10 @@ currentAccountsRoutes.get('/:id/statement', async (c) => {
 
 currentAccountsRoutes.post('/', validate(accountSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof accountSchema>
+  const tenantId = c.get('tenantId')
   await db.insert(currentAccounts).values({
     id: body.id ?? `CARI-${Date.now()}`,
+    tenantId,
     name: body.name,
     type: body.type,
     taxNumber: body.taxNumber,
@@ -99,6 +124,7 @@ currentAccountsRoutes.post('/', validate(accountSchema), async (c) => {
 currentAccountsRoutes.put('/:id', validate(accountSchema.partial()), async (c) => {
   const id = c.req.param('id')
   const body = c.get('validatedBody') as Partial<z.infer<typeof accountSchema>>
+  const tenantId = c.get('tenantId')
   await db
     .update(currentAccounts)
     .set({
@@ -106,16 +132,35 @@ currentAccountsRoutes.put('/:id', validate(accountSchema.partial()), async (c) =
       creditLimit: body.creditLimit != null ? String(body.creditLimit) : undefined,
       updatedAt: new Date(),
     })
-    .where(eq(currentAccounts.id, id))
-  const [account] = await db.select().from(currentAccounts).where(eq(currentAccounts.id, id))
+    .where(
+      and(
+        eq(currentAccounts.id, id),
+        ...(tenantId ? [eq(currentAccounts.tenantId, tenantId)] : []),
+      ),
+    )
+  const [account] = await db
+    .select()
+    .from(currentAccounts)
+    .where(
+      and(
+        eq(currentAccounts.id, id),
+        ...(tenantId ? [eq(currentAccounts.tenantId, tenantId)] : []),
+      ),
+    )
   return ok(c, account)
 })
 
 currentAccountsRoutes.delete('/:id', async (c) => {
   const id = c.req.param('id')
+  const tenantId = c.get('tenantId')
   await db
     .update(currentAccounts)
     .set({ active: false, updatedAt: new Date() })
-    .where(eq(currentAccounts.id, id))
+    .where(
+      and(
+        eq(currentAccounts.id, id),
+        ...(tenantId ? [eq(currentAccounts.tenantId, tenantId)] : []),
+      ),
+    )
   return ok(c, { id, active: false })
 })

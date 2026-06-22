@@ -53,6 +53,7 @@ async function resolveCategoryId(input?: string | null, existingId?: string | nu
 }
 
 productsRoutes.get('/', async (c) => {
+  const tenantId = c.get('tenantId')
   const search = c.req.query('search')
   const category = c.req.query('category')
   const status = c.req.query('status')
@@ -61,6 +62,7 @@ productsRoutes.get('/', async (c) => {
   const offset = (page - 1) * limit
 
   const filters: SQL[] = [
+    tenantId ? eq(products.tenantId, tenantId) : undefined,
     search
       ? or(ilike(products.name, `%${search}%`), ilike(products.sku, `%${search}%`))
       : undefined,
@@ -113,7 +115,11 @@ productsRoutes.get('/', async (c) => {
 })
 
 productsRoutes.get('/low-stock', async (c) => {
-  const result = await db.select().from(products)
+  const tenantId = c.get('tenantId')
+  const result = await db
+    .select()
+    .from(products)
+    .where(tenantId ? eq(products.tenantId, tenantId) : undefined)
   const withStocks = await attachProductStocks(result)
   return ok(c, withStocks.filter((item) => item.totalStock <= Number(item.reorderPoint)))
 })
@@ -143,7 +149,16 @@ productsRoutes.delete('/categories/:id', requireRole('admin'), async (c) => {
 
 productsRoutes.get('/:id', async (c) => {
   const id = c.req.param('id')
-  const [product] = await db.select().from(products).where(eq(products.id, id))
+  const tenantId = c.get('tenantId')
+  const [product] = await db
+    .select()
+    .from(products)
+    .where(
+      and(
+        eq(products.id, id),
+        ...(tenantId ? [eq(products.tenantId, tenantId)] : []),
+      ),
+    )
   if (!product) {
     return fail(c, 404, 'Product not found')
   }
@@ -194,9 +209,11 @@ productsRoutes.get('/:id/stock', async (c) => {
 
 productsRoutes.post('/', validate(createSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof createSchema>
+  const tenantId = c.get('tenantId')
   const categoryId = await resolveCategoryId(body.category, body.categoryId)
   await db.insert(products).values({
     id: body.id ?? `PRD-${Date.now()}`,
+    tenantId,
     name: body.name,
     sku: body.sku,
     barcode: body.barcode,
@@ -228,6 +245,7 @@ productsRoutes.post('/', validate(createSchema), async (c) => {
 productsRoutes.put('/:id', validate(updateSchema), async (c) => {
   const id = c.req.param('id')
   const body = c.get('validatedBody') as z.infer<typeof updateSchema>
+  const tenantId = c.get('tenantId')
   const categoryId = await resolveCategoryId(body.category, body.categoryId)
   await db
     .update(products)
@@ -246,19 +264,38 @@ productsRoutes.put('/:id', validate(updateSchema), async (c) => {
       description: body.description,
       updatedAt: new Date(),
     })
-    .where(eq(products.id, id))
+    .where(
+      and(
+        eq(products.id, id),
+        ...(tenantId ? [eq(products.tenantId, tenantId)] : []),
+      ),
+    )
 
-  const [product] = await db.select().from(products).where(eq(products.id, id))
+  const [product] = await db
+    .select()
+    .from(products)
+    .where(
+      and(
+        eq(products.id, id),
+        ...(tenantId ? [eq(products.tenantId, tenantId)] : []),
+      ),
+    )
   await invalidate('products:*')
   return ok(c, product)
 })
 
 productsRoutes.delete('/:id', async (c) => {
   const id = c.req.param('id')
+  const tenantId = c.get('tenantId')
   await db
     .update(products)
     .set({ status: 'archived', updatedAt: new Date() })
-    .where(eq(products.id, id))
+    .where(
+      and(
+        eq(products.id, id),
+        ...(tenantId ? [eq(products.tenantId, tenantId)] : []),
+      ),
+    )
   await invalidate('products:*')
   return ok(c, { id, status: 'archived' })
 })

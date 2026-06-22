@@ -42,6 +42,7 @@ authRoutes.post('/login', validate(loginSchema), async (c) => {
 
   const token = await signAccessToken({
     id: user.id,
+    tenantId: user.tenantId,
     name: user.name,
     email: user.email,
     role: user.role,
@@ -86,6 +87,7 @@ authRoutes.post('/login', validate(loginSchema), async (c) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      tenantId: user.tenantId,
     },
   })
 })
@@ -134,6 +136,7 @@ authRoutes.post('/refresh', async (c) => {
 
   const accessToken = await signAccessToken({
     id: user.id,
+    tenantId: user.tenantId,
     name: user.name,
     email: user.email,
     role: user.role,

@@ -12,8 +12,18 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core'
 
+export const tenants = pgTable('tenants', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  slug: varchar('slug', { length: 100 }).notNull().unique(),
+  name: varchar('name', { length: 255 }).notNull(),
+  plan: varchar('plan', { length: 20 }).notNull().default('starter'),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').references(() => tenants.id),
   email: varchar('email', { length: 255 }).notNull().unique(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
@@ -23,29 +33,44 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
-export const refreshTokens = pgTable('refresh_tokens', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  token: varchar('token', { length: 500 }).notNull().unique(),
-  expiresAt: timestamp('expires_at').notNull(),
-  revoked: boolean('revoked').notNull().default(false),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-})
+export const refreshTokens = pgTable(
+  'refresh_tokens',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    token: varchar('token', { length: 500 }).notNull().unique(),
+    expiresAt: timestamp('expires_at').notNull(),
+    revoked: boolean('revoked').notNull().default(false),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    byUser: index('refresh_tokens_user_idx').on(table.userId),
+    byExpiry: index('refresh_tokens_expiry_idx').on(table.expiresAt),
+  }),
+)
 
-export const auditLogs = pgTable('audit_logs', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  userId: uuid('user_id').references(() => users.id),
-  action: varchar('action', { length: 50 }).notNull(),
-  entity: varchar('entity', { length: 50 }).notNull(),
-  entityId: varchar('entity_id', { length: 50 }),
-  oldValues: jsonb('old_values'),
-  newValues: jsonb('new_values'),
-  ip: varchar('ip', { length: 45 }),
-  userAgent: varchar('user_agent', { length: 500 }),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-})
+export const auditLogs = pgTable(
+  'audit_logs',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').references(() => users.id),
+    action: varchar('action', { length: 50 }).notNull(),
+    entity: varchar('entity', { length: 50 }).notNull(),
+    entityId: varchar('entity_id', { length: 50 }),
+    oldValues: jsonb('old_values'),
+    newValues: jsonb('new_values'),
+    ip: varchar('ip', { length: 45 }),
+    userAgent: varchar('user_agent', { length: 500 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    byEntity: index('audit_logs_entity_idx').on(table.entity, table.entityId),
+    byUser: index('audit_logs_user_idx').on(table.userId),
+    byCreatedAt: index('audit_logs_created_idx').on(table.createdAt),
+  }),
+)
 
 export const companySettings = pgTable('company_settings', {
   id: integer('id').primaryKey().default(1),
@@ -64,6 +89,7 @@ export const companySettings = pgTable('company_settings', {
 
 export const currentAccounts = pgTable('current_accounts', {
   id: varchar('id', { length: 20 }).primaryKey(),
+  tenantId: uuid('tenant_id').references(() => tenants.id),
   name: varchar('name', { length: 255 }).notNull(),
   type: varchar('type', { length: 20 }).notNull(),
   taxNumber: varchar('tax_number', { length: 20 }),
@@ -85,6 +111,7 @@ export const productCategories = pgTable('product_categories', {
 
 export const products = pgTable('products', {
   id: varchar('id', { length: 20 }).primaryKey(),
+  tenantId: uuid('tenant_id').references(() => tenants.id),
   name: varchar('name', { length: 255 }).notNull(),
   sku: varchar('sku', { length: 100 }).notNull().unique(),
   barcode: varchar('barcode', { length: 50 }),
@@ -111,19 +138,27 @@ export const warehouses = pgTable('warehouses', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
-export const stockMovements = pgTable('stock_movements', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  productId: varchar('product_id', { length: 20 }).notNull().references(() => products.id),
-  warehouseId: varchar('warehouse_id', { length: 20 }).references(() => warehouses.id),
-  type: varchar('type', { length: 20 }).notNull(),
-  qty: numeric('qty', { precision: 15, scale: 3 }).notNull(),
-  unitCost: numeric('unit_cost', { precision: 15, scale: 2 }),
-  relatedDocType: varchar('related_doc_type', { length: 30 }),
-  relatedDocId: varchar('related_doc_id', { length: 30 }),
-  note: text('note'),
-  createdBy: uuid('created_by').references(() => users.id),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-})
+export const stockMovements = pgTable(
+  'stock_movements',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    productId: varchar('product_id', { length: 20 }).notNull().references(() => products.id),
+    warehouseId: varchar('warehouse_id', { length: 20 }).references(() => warehouses.id),
+    type: varchar('type', { length: 20 }).notNull(),
+    qty: numeric('qty', { precision: 15, scale: 3 }).notNull(),
+    unitCost: numeric('unit_cost', { precision: 15, scale: 2 }),
+    relatedDocType: varchar('related_doc_type', { length: 30 }),
+    relatedDocId: varchar('related_doc_id', { length: 30 }),
+    note: text('note'),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    byProduct: index('sm_product_idx').on(table.productId),
+    byDate: index('sm_date_idx').on(table.createdAt),
+    byRelated: index('sm_related_idx').on(table.relatedDocType, table.relatedDocId),
+  }),
+)
 
 export const leads = pgTable('leads', {
   id: varchar('id', { length: 20 }).primaryKey(),
@@ -182,24 +217,31 @@ export const deals = pgTable('deals', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
-export const tasks = pgTable('tasks', {
-  id: varchar('id', { length: 20 }).primaryKey(),
-  title: varchar('title', { length: 255 }).notNull(),
-  related: varchar('related', { length: 255 }),
-  relatedType: varchar('related_type', { length: 30 }),
-  relatedId: varchar('related_id', { length: 20 }),
-  due: date('due'),
-  priority: varchar('priority', { length: 20 }).notNull().default('medium'),
-  done: boolean('done').notNull().default(false),
-  doneAt: timestamp('done_at'),
-  owner: varchar('owner', { length: 255 }),
-  assignedTo: uuid('assigned_to').references(() => users.id),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-})
+export const tasks = pgTable(
+  'tasks',
+  {
+    id: varchar('id', { length: 20 }).primaryKey(),
+    title: varchar('title', { length: 255 }).notNull(),
+    related: varchar('related', { length: 255 }),
+    relatedType: varchar('related_type', { length: 30 }),
+    relatedId: varchar('related_id', { length: 20 }),
+    due: date('due'),
+    priority: varchar('priority', { length: 20 }).notNull().default('medium'),
+    done: boolean('done').notNull().default(false),
+    doneAt: timestamp('done_at'),
+    owner: varchar('owner', { length: 255 }),
+    assignedTo: uuid('assigned_to').references(() => users.id),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    byDone: index('task_done_idx').on(table.done, table.due),
+  }),
+)
 
 export const quotations = pgTable('quotations', {
   id: varchar('id', { length: 30 }).primaryKey(),
+  tenantId: uuid('tenant_id').references(() => tenants.id),
   currentAccountId: varchar('current_account_id', { length: 20 }).references(
     () => currentAccounts.id,
   ),
@@ -227,23 +269,32 @@ export const quotationLines = pgTable('quotation_lines', {
   lineOrder: integer('line_order').notNull().default(0),
 })
 
-export const invoices = pgTable('invoices', {
-  id: varchar('id', { length: 30 }).primaryKey(),
-  currentAccountId: varchar('current_account_id', { length: 20 }).references(
-    () => currentAccounts.id,
-  ),
-  customer: varchar('customer', { length: 255 }).notNull(),
-  issueDate: date('issue_date').notNull(),
-  dueDate: date('due_date').notNull(),
-  status: varchar('status', { length: 20 }).notNull().default('draft'),
-  note: text('note'),
-  relatedQuotationId: varchar('related_quotation_id', { length: 30 }).references(
-    () => quotations.id,
-  ),
-  createdBy: uuid('created_by').references(() => users.id),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-})
+export const invoices = pgTable(
+  'invoices',
+  {
+    id: varchar('id', { length: 30 }).primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id),
+    currentAccountId: varchar('current_account_id', { length: 20 }).references(
+      () => currentAccounts.id,
+    ),
+    customer: varchar('customer', { length: 255 }).notNull(),
+    issueDate: date('issue_date').notNull(),
+    dueDate: date('due_date').notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('draft'),
+    note: text('note'),
+    relatedQuotationId: varchar('related_quotation_id', { length: 30 }).references(
+      () => quotations.id,
+    ),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    byStatus: index('inv_status_idx').on(table.status),
+    byDueDate: index('inv_due_idx').on(table.dueDate),
+    byAccountDate: index('inv_acc_date_idx').on(table.currentAccountId, table.issueDate),
+  }),
+)
 
 export const invoiceLines = pgTable('invoice_lines', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -260,6 +311,7 @@ export const invoiceLines = pgTable('invoice_lines', {
 
 export const purchaseOrders = pgTable('purchase_orders', {
   id: varchar('id', { length: 30 }).primaryKey(),
+  tenantId: uuid('tenant_id').references(() => tenants.id),
   currentAccountId: varchar('current_account_id', { length: 20 }).references(
     () => currentAccounts.id,
   ),
@@ -299,56 +351,28 @@ export const financeAccounts = pgTable('finance_accounts', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
-export const transactions = pgTable('transactions', {
-  id: varchar('id', { length: 20 }).primaryKey(),
-  date: date('date').notNull(),
-  description: varchar('description', { length: 500 }).notNull(),
-  category: varchar('category', { length: 100 }),
-  financeAccountId: varchar('finance_account_id', { length: 20 })
-    .notNull()
-    .references(() => financeAccounts.id),
-  type: varchar('type', { length: 20 }).notNull(),
-  amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
-  relatedDocType: varchar('related_doc_type', { length: 30 }),
-  relatedDocId: varchar('related_doc_id', { length: 30 }),
-  currentAccountId: varchar('current_account_id', { length: 20 }).references(
-    () => currentAccounts.id,
-  ),
-  createdBy: uuid('created_by').references(() => users.id),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-})
-
-export const invoicesIdx = {
-  byStatus: index('inv_status_idx').on(invoices.status),
-  byDueDate: index('inv_due_idx').on(invoices.dueDate),
-  byAccountDate: index('inv_acc_date_idx').on(invoices.currentAccountId, invoices.issueDate),
-}
-
-export const stockMovementsIdx = {
-  byProduct: index('sm_product_idx').on(stockMovements.productId),
-  byDate: index('sm_date_idx').on(stockMovements.createdAt),
-  byRelated: index('sm_related_idx').on(
-    stockMovements.relatedDocType,
-    stockMovements.relatedDocId,
-  ),
-}
-
-export const transactionsIdx = {
-  byAccount: index('trx_account_idx').on(transactions.financeAccountId),
-  byDate: index('trx_date_idx').on(transactions.date),
-}
-
-export const tasksIdx = {
-  byDone: index('task_done_idx').on(tasks.done, tasks.due),
-}
-
-export const refreshTokensIdx = {
-  byUser: index('refresh_tokens_user_idx').on(refreshTokens.userId),
-  byExpiry: index('refresh_tokens_expiry_idx').on(refreshTokens.expiresAt),
-}
-
-export const auditLogsIdx = {
-  byEntity: index('audit_logs_entity_idx').on(auditLogs.entity, auditLogs.entityId),
-  byUser: index('audit_logs_user_idx').on(auditLogs.userId),
-  byCreatedAt: index('audit_logs_created_idx').on(auditLogs.createdAt),
-}
+export const transactions = pgTable(
+  'transactions',
+  {
+    id: varchar('id', { length: 20 }).primaryKey(),
+    date: date('date').notNull(),
+    description: varchar('description', { length: 500 }).notNull(),
+    category: varchar('category', { length: 100 }),
+    financeAccountId: varchar('finance_account_id', { length: 20 })
+      .notNull()
+      .references(() => financeAccounts.id),
+    type: varchar('type', { length: 20 }).notNull(),
+    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
+    relatedDocType: varchar('related_doc_type', { length: 30 }),
+    relatedDocId: varchar('related_doc_id', { length: 30 }),
+    currentAccountId: varchar('current_account_id', { length: 20 }).references(
+      () => currentAccounts.id,
+    ),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    byAccount: index('trx_account_idx').on(table.financeAccountId),
+    byDate: index('trx_date_idx').on(table.date),
+  }),
+)

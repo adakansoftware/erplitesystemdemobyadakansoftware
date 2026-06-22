@@ -19,6 +19,7 @@ export const authMiddleware = createMiddleware(async (c, next) => {
       name: typeof payload.name === 'string' ? payload.name : undefined,
       email: typeof payload.email === 'string' ? payload.email : undefined,
       role: typeof payload.role === 'string' ? payload.role : undefined,
+      tenantId: typeof payload.tenantId === 'string' ? payload.tenantId : undefined,
     })
     await next()
   } catch {

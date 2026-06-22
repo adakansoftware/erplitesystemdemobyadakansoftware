@@ -8,6 +8,13 @@
       "when": 1781964337925,
       "tag": "0000_huge_lord_hawal",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782150696635,
+      "tag": "0001_many_sharon_ventura",
+      "breakpoints": true
     }
   ]
 }

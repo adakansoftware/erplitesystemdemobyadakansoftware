@@ -1,7 +1,11 @@
 'use client'
 
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '@/lib/api/client'
+import { useCurrentAccounts } from '@/hooks/queries/use-current-accounts'
+import { useInvoices } from '@/hooks/queries/use-invoices'
+import { useProducts } from '@/hooks/queries/use-products'
 import {
   accountStatements,
   currentAccounts as initialCurrentAccounts,
@@ -1142,6 +1146,13 @@ function getStatementByAccountId(accountId: string) {
 
 export function useErpCollections() {
   const [state, setState] = useState(storeState)
+  const queryClient = useQueryClient()
+  const { data: queryProducts = initialProducts, isLoading: productsLoading } = useProducts()
+  const { data: queryInvoices = initialInvoices, isLoading: invoicesLoading } = useInvoices()
+  const {
+    data: queryCurrentAccounts = initialCurrentAccounts,
+    isLoading: currentAccountsLoading,
+  } = useCurrentAccounts()
 
   useEffect(() => subscribe(setState), [])
 
@@ -1151,44 +1162,124 @@ export function useErpCollections() {
     }
   }, [])
 
+  storeState = {
+    ...storeState,
+    products: queryProducts,
+    invoices: queryInvoices,
+    currentAccounts: queryCurrentAccounts,
+    hydrated:
+      storeState.hydrated ||
+      (!productsLoading && !invoicesLoading && !currentAccountsLoading),
+  }
+
+  const mergedState = {
+    ...state,
+    products: queryProducts,
+    invoices: queryInvoices,
+    currentAccounts: queryCurrentAccounts,
+    hydrated:
+      state.hydrated ||
+      (!productsLoading && !invoicesLoading && !currentAccountsLoading),
+  }
+
   return useMemo(
     () => ({
-      ...state,
+      ...mergedState,
       refresh: refreshStore,
       getProductById: (id: string) =>
-        state.products.find((product) => product.id === id),
+        mergedState.products.find((product) => product.id === id),
       getInvoiceById: (id: string) =>
-        state.invoices.find((invoice) => invoice.id === id),
+        mergedState.invoices.find((invoice) => invoice.id === id),
       getQuotationById: (id: string) =>
-        state.quotations.find((quotation) => quotation.id === id),
+        mergedState.quotations.find((quotation) => quotation.id === id),
       getPurchaseById: (id: string) =>
-        state.purchases.find((purchase) => purchase.id === id),
+        mergedState.purchases.find((purchase) => purchase.id === id),
       getCurrentAccountById: (id: string) =>
-        state.currentAccounts.find((account) => account.id === id),
+        mergedState.currentAccounts.find((account) => account.id === id),
       getStatementByAccountId,
-      createProduct: createProductAction,
+      createProduct: async (...args: Parameters<typeof createProductAction>) => {
+        const result = await createProductAction(...args)
+        await queryClient.invalidateQueries({ queryKey: ['products'] })
+        return result
+      },
       createProductCategory: createProductCategoryAction,
-      updateProduct: updateProductAction,
-      addStockMovement: addStockMovementAction,
-      createInvoice: createInvoiceAction,
-      updateInvoice: updateInvoiceAction,
-      updateInvoiceStatus: updateInvoiceStatusAction,
+      updateProduct: async (...args: Parameters<typeof updateProductAction>) => {
+        const result = await updateProductAction(...args)
+        await queryClient.invalidateQueries({ queryKey: ['products'] })
+        return result
+      },
+      addStockMovement: async (...args: Parameters<typeof addStockMovementAction>) => {
+        const result = await addStockMovementAction(...args)
+        await queryClient.invalidateQueries({ queryKey: ['products'] })
+        return result
+      },
+      createInvoice: async (...args: Parameters<typeof createInvoiceAction>) => {
+        const result = await createInvoiceAction(...args)
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+          queryClient.invalidateQueries({ queryKey: ['products'] }),
+          queryClient.invalidateQueries({ queryKey: ['current-accounts'] }),
+        ])
+        return result
+      },
+      updateInvoice: async (...args: Parameters<typeof updateInvoiceAction>) => {
+        const result = await updateInvoiceAction(...args)
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+          queryClient.invalidateQueries({ queryKey: ['products'] }),
+          queryClient.invalidateQueries({ queryKey: ['current-accounts'] }),
+        ])
+        return result
+      },
+      updateInvoiceStatus: async (...args: Parameters<typeof updateInvoiceStatusAction>) => {
+        const result = await updateInvoiceStatusAction(...args)
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+          queryClient.invalidateQueries({ queryKey: ['current-accounts'] }),
+        ])
+        return result
+      },
       createQuotation: createQuotationAction,
       updateQuotation: updateQuotationAction,
       updateQuotationStatus: updateQuotationStatusAction,
-      convertQuotationToInvoice: convertQuotationToInvoiceAction,
+      convertQuotationToInvoice: async (
+        ...args: Parameters<typeof convertQuotationToInvoiceAction>
+      ) => {
+        const result = await convertQuotationToInvoiceAction(...args)
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+          queryClient.invalidateQueries({ queryKey: ['products'] }),
+        ])
+        return result
+      },
       createPurchaseOrder: createPurchaseOrderAction,
       updatePurchaseOrder: updatePurchaseOrderAction,
-      receivePurchaseOrder: receivePurchaseOrderAction,
-      createCurrentAccount: createCurrentAccountAction,
-      updateCurrentAccount: updateCurrentAccountAction,
-      deleteCurrentAccount: deleteCurrentAccountAction,
+      receivePurchaseOrder: async (...args: Parameters<typeof receivePurchaseOrderAction>) => {
+        const result = await receivePurchaseOrderAction(...args)
+        await queryClient.invalidateQueries({ queryKey: ['products'] })
+        return result
+      },
+      createCurrentAccount: async (...args: Parameters<typeof createCurrentAccountAction>) => {
+        const result = await createCurrentAccountAction(...args)
+        await queryClient.invalidateQueries({ queryKey: ['current-accounts'] })
+        return result
+      },
+      updateCurrentAccount: async (...args: Parameters<typeof updateCurrentAccountAction>) => {
+        const result = await updateCurrentAccountAction(...args)
+        await queryClient.invalidateQueries({ queryKey: ['current-accounts'] })
+        return result
+      },
+      deleteCurrentAccount: async (...args: Parameters<typeof deleteCurrentAccountAction>) => {
+        const result = await deleteCurrentAccountAction(...args)
+        await queryClient.invalidateQueries({ queryKey: ['current-accounts'] })
+        return result
+      },
       createTransaction: createTransactionAction,
       createTask: createTaskAction,
       toggleTask: toggleTaskAction,
       deleteTask: deleteTaskAction,
     }),
-    [state],
+    [mergedState, queryClient],
   )
 }
 

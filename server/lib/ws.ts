@@ -4,19 +4,40 @@ type SocketLike = {
 }
 
 const OPEN_STATE = 1
-const clients = new Map<string, SocketLike>()
+const clients = new Map<string, Set<SocketLike>>()
 
 export function registerClient(userId: string, socket: SocketLike) {
-  clients.set(userId, socket)
+  const sockets = clients.get(userId) ?? new Set<SocketLike>()
+  sockets.add(socket)
+  clients.set(userId, sockets)
 }
 
-export function unregisterClient(userId: string) {
-  clients.delete(userId)
+export function unregisterClient(userId: string, socket?: SocketLike) {
+  if (!socket) {
+    clients.delete(userId)
+    return
+  }
+
+  const sockets = clients.get(userId)
+  if (!sockets) {
+    return
+  }
+
+  sockets.delete(socket)
+  if (!sockets.size) {
+    clients.delete(userId)
+  }
 }
 
 export function notifyUser(userId: string, event: string, data: unknown) {
-  const ws = clients.get(userId)
-  if (ws?.readyState === OPEN_STATE) {
-    ws.send(JSON.stringify({ event, data }))
+  const sockets = clients.get(userId)
+  if (!sockets?.size) {
+    return
+  }
+
+  for (const ws of sockets) {
+    if (ws.readyState === OPEN_STATE) {
+      ws.send(JSON.stringify({ event, data }))
+    }
   }
 }

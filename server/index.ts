@@ -1,13 +1,16 @@
 import { serve } from '@hono/node-server'
+import type { IncomingMessage } from 'node:http'
 import cron from 'node-cron'
 import { eq, inArray } from 'drizzle-orm'
+import { WebSocketServer, type WebSocket } from 'ws'
 import { app } from './app'
 import { db } from './db/client'
 import { currentAccounts, invoices, users } from './db/schema'
+import { verifyToken } from './lib/auth'
 import { eventBus } from './lib/event-bus'
 import { logger } from './lib/logger'
 import { sendQueuedMail } from './lib/queue'
-import { notifyUser } from './lib/ws'
+import { notifyUser, registerClient, unregisterClient } from './lib/ws'
 
 const port = Number(process.env.PORT ?? 3001)
 
@@ -134,6 +137,65 @@ cron.schedule('0 * * * *', async () => {
   )
 })
 
-serve({ fetch: app.fetch, port }, () => {
+const server = serve({ fetch: app.fetch, port }, () => {
   logger.info(`ERP API -> http://localhost:${port}`)
+})
+
+const wss = new WebSocketServer({ noServer: true })
+
+function readCookie(req: IncomingMessage, name: string) {
+  const raw = req.headers.cookie
+  if (!raw) {
+    return undefined
+  }
+
+  return raw
+    .split(';')
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${name}=`))
+    ?.slice(name.length + 1)
+}
+
+async function authorizeUpgrade(req: IncomingMessage) {
+  const base = `http://${req.headers.host ?? 'localhost'}`
+  const url = new URL(req.url ?? '/', base)
+  const token =
+    url.searchParams.get('token') ??
+    readCookie(req, 'erp_token') ??
+    req.headers.authorization?.replace('Bearer ', '')
+
+  if (!token) {
+    return null
+  }
+
+  try {
+    const payload = await verifyToken(token)
+    return typeof payload.id === 'string' ? payload.id : null
+  } catch {
+    return null
+  }
+}
+
+server.on('upgrade', async (req, socket, head) => {
+  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+  if (url.pathname !== '/api/ws') {
+    socket.destroy()
+    return
+  }
+
+  const userId = await authorizeUpgrade(req)
+  if (!userId) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+    socket.destroy()
+    return
+  }
+
+  wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+    registerClient(userId, ws as unknown as WebSocket)
+    ws.send(JSON.stringify({ event: 'ws.connected', data: { userId } }))
+
+    ws.on('close', () => {
+      unregisterClient(userId, ws as unknown as WebSocket)
+    })
+  })
 })

@@ -8,7 +8,9 @@ declare module 'hono' {
       name?: string
       email?: string
       role?: string
+      tenantId?: string
     }
+    tenantId?: string
   }
 }
 
