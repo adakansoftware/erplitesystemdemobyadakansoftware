@@ -40,7 +40,16 @@ async function resolveCategoryId(
   tenantId?: string,
 ) {
   if (existingId) {
-    return existingId
+    const [existingCategory] = await db
+      .select({ id: productCategories.id })
+      .from(productCategories)
+      .where(
+        and(
+          eq(productCategories.id, existingId),
+          ...(tenantId ? [eq(productCategories.tenantId, tenantId)] : []),
+        ),
+      )
+    return existingCategory?.id
   }
 
   if (!input) {
@@ -287,6 +296,9 @@ productsRoutes.post('/', validate(createSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof createSchema>
   const tenantId = c.get('tenantId')
   const categoryId = await resolveCategoryId(body.category, body.categoryId, tenantId)
+  if (body.categoryId && !categoryId) {
+    return fail(c, 404, 'Category not found')
+  }
   await db.insert(products).values({
     id: body.id ?? `PRD-${Date.now()}`,
     tenantId,
@@ -323,6 +335,9 @@ productsRoutes.put('/:id', validate(updateSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof updateSchema>
   const tenantId = c.get('tenantId')
   const categoryId = await resolveCategoryId(body.category, body.categoryId, tenantId)
+  if (body.categoryId && !categoryId) {
+    return fail(c, 404, 'Category not found')
+  }
   await db
     .update(products)
     .set({

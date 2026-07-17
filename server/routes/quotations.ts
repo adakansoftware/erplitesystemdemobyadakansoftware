@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { and, eq, ilike, inArray, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
-import { currentAccounts, invoiceLines, invoices, quotationLines, quotations } from '../db/schema'
+import { currentAccounts, invoiceLines, invoices, products, quotationLines, quotations } from '../db/schema'
 import { audit } from '../lib/audit'
 import { invalidate, tenantCachePattern } from '../lib/cache'
 import { eventBus } from '../lib/event-bus'
@@ -114,6 +114,27 @@ quotationsRoutes.get('/:id', async (c) => {
 quotationsRoutes.post('/', validate(quotationSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof quotationSchema>
   const tenantId = c.get('tenantId')
+  if (tenantId && body.currentAccountId) {
+    const [account] = await db
+      .select({ id: currentAccounts.id })
+      .from(currentAccounts)
+      .where(and(eq(currentAccounts.id, body.currentAccountId), eq(currentAccounts.tenantId, tenantId)))
+    if (!account) {
+      return fail(c, 404, 'Current account not found')
+    }
+  }
+  for (const line of body.lines) {
+    if (!tenantId || !line.productId) {
+      continue
+    }
+    const [product] = await db
+      .select({ id: products.id })
+      .from(products)
+      .where(and(eq(products.id, line.productId), eq(products.tenantId, tenantId)))
+    if (!product) {
+      return fail(c, 404, 'Product not found')
+    }
+  }
   const ids = await db.select({ id: quotations.id }).from(quotations)
   const id = nextDocumentId(ids.map((item) => item.id), 'TKL')
   await db.insert(quotations).values({
@@ -240,6 +261,15 @@ quotationsRoutes.post('/:id/convert-to-invoice', async (c) => {
       ),
     )
   if (!quotation) return fail(c, 404, 'Quotation not found')
+  if (tenantId && quotation.currentAccountId) {
+    const [account] = await db
+      .select({ id: currentAccounts.id })
+      .from(currentAccounts)
+      .where(and(eq(currentAccounts.id, quotation.currentAccountId), eq(currentAccounts.tenantId, tenantId)))
+    if (!account) {
+      return fail(c, 404, 'Current account not found')
+    }
+  }
   const lines = await db.select().from(quotationLines).where(eq(quotationLines.quotationId, id))
   const invoiceIds = await db.select({ id: invoices.id }).from(invoices)
   const invoiceId = nextDocumentId(invoiceIds.map((item) => item.id), 'FT')

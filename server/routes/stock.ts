@@ -82,6 +82,17 @@ stockRoutes.post('/movements', validate(movementSchema), async (c) => {
     if (!product) {
       return fail(c, 404, 'Product not found')
     }
+
+    if (body.warehouseId) {
+      const [warehouse] = await db
+        .select({ id: warehouses.id })
+        .from(warehouses)
+        .where(and(eq(warehouses.id, body.warehouseId), eq(warehouses.tenantId, tenantId)))
+
+      if (!warehouse) {
+        return fail(c, 404, 'Warehouse not found')
+      }
+    }
   }
   if (body.type === 'out') {
     const currentStock = await getProductStock(body.productId)
