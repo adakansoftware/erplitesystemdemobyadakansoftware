@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { db } from '../db/client'
 import {
   deals,
@@ -23,13 +23,17 @@ reportsRoutes.get('/sales-summary', async (c) => {
     tenantCacheKey('reports:sales', tenantId, period),
     300,
     async () => {
-      const [invoiceItems, lineItems] = await Promise.all([
-        db.select().from(invoices).where(tenantId ? eq(invoices.tenantId, tenantId) : undefined),
-        db.select().from(invoiceLines),
-      ])
-      const invoiceIds = new Set(invoiceItems.map((item) => item.id))
-      const scopedLineItems = lineItems.filter((line) => invoiceIds.has(line.invoiceId))
-      const totalRevenue = scopedLineItems.reduce((sum, line) => {
+      const invoiceItems = await db
+        .select()
+        .from(invoices)
+        .where(tenantId ? eq(invoices.tenantId, tenantId) : undefined)
+      const lineItems = invoiceItems.length
+        ? await db
+            .select()
+            .from(invoiceLines)
+            .where(inArray(invoiceLines.invoiceId, invoiceItems.map((item) => item.id)))
+        : []
+      const totalRevenue = lineItems.reduce((sum, line) => {
         const base = toNumber(line.quantity) * toNumber(line.unitPrice)
         return sum + base + base * (toNumber(line.taxRate) / 100)
       }, 0)

@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm'
+import { and, eq, ilike, inArray, or, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { productCategories, products, stockMovements, warehouses } from '../db/schema'
@@ -212,7 +212,7 @@ productsRoutes.get('/:id', async (c) => {
     return fail(c, 404, 'Product not found')
   }
 
-  const totalStock = await getProductStock(product.id)
+  const totalStock = await getProductStock(product.id, tenantId)
   const [category] = product.categoryId
     ? await db
         .select()
@@ -311,7 +311,7 @@ productsRoutes.post('/', validate(createSchema), async (c) => {
   if (existingSku) {
     return fail(c, 409, 'Product SKU already exists')
   }
-  await db.insert(products).values({
+  const [product] = await db.insert(products).values({
     id: body.id ?? `PRD-${Date.now()}`,
     tenantId,
     name: body.name,
@@ -326,9 +326,7 @@ productsRoutes.post('/', validate(createSchema), async (c) => {
     reorderPoint: body.reorderPoint,
     status: body.status,
     description: body.description,
-  })
-
-  const [product] = await db.select().from(products).where(eq(products.sku, body.sku))
+  }).returning()
   await invalidate(tenantCachePattern('products:list', tenantId))
   await audit({
     userId: (c.get('user') as { id?: string } | undefined)?.id,
