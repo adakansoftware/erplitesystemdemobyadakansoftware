@@ -25,14 +25,16 @@ export const tenants = pgTable('tenants', {
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   tenantId: uuid('tenant_id').references(() => tenants.id),
-  email: varchar('email', { length: 255 }).notNull().unique(),
+  email: varchar('email', { length: 255 }).notNull(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   role: varchar('role', { length: 50 }).notNull().default('staff'),
   active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-})
+}, (table) => ({
+  byTenantEmail: uniqueIndex('users_tenant_email_idx').on(table.tenantId, table.email),
+}))
 
 export const refreshTokens = pgTable(
   'refresh_tokens',

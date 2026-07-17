@@ -1,9 +1,9 @@
 import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
-import { refreshTokens, users } from '../db/schema'
+import { refreshTokens, tenants, users } from '../db/schema'
 import { audit } from '../lib/audit'
 import {
   createRefreshToken,
@@ -17,6 +17,7 @@ import { authMiddleware } from '../middleware/auth'
 import { validate } from '../middleware/validate'
 
 const loginSchema = z.object({
+  tenantSlug: z.string().min(2).default('demo'),
   email: z.string().email(),
   password: z.string().min(6),
 })
@@ -34,7 +35,14 @@ function getRefreshTokenFromRequest(c: Context) {
 
 authRoutes.post('/login', validate(loginSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof loginSchema>
-  const [user] = await db.select().from(users).where(eq(users.email, body.email))
+  const [tenant] = await db.select().from(tenants).where(eq(tenants.slug, body.tenantSlug))
+  if (!tenant || !tenant.active) {
+    return fail(c, 401, 'Invalid tenant or credentials')
+  }
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.email, body.email), eq(users.tenantId, tenant.id)))
 
   if (!user || !user.active || !verifyPassword(body.password, user.passwordHash)) {
     return fail(c, 401, 'Invalid email or password')

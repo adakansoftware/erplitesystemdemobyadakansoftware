@@ -59,7 +59,15 @@ usersRoutes.get('/', async (c) => {
 usersRoutes.post('/', validate(createUserSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof createUserSchema>
   const tenantId = c.get('tenantId')
-  const [existing] = await db.select().from(users).where(eq(users.email, body.email))
+  const [existing] = await db
+    .select()
+    .from(users)
+    .where(
+      and(
+        eq(users.email, body.email),
+        ...(tenantId ? [eq(users.tenantId, tenantId)] : []),
+      ),
+    )
   if (existing) {
     return fail(c, 409, 'User already exists')
   }

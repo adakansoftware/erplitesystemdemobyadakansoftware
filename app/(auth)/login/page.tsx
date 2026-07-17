@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/use-auth'
 export default function LoginPage() {
   const router = useRouter()
   const { currentUser, isReady, login } = useAuth()
+  const [tenantSlug, setTenantSlug] = useState('demo')
   const [email, setEmail] = useState('admin@demo.com')
   const [password, setPassword] = useState('')
 
@@ -23,7 +24,7 @@ export default function LoginPage() {
   }, [currentUser, isReady, router])
 
   async function handleLogin() {
-    const result = await login(email, password)
+    const result = await login(tenantSlug, email, password)
 
     if (!result.ok) {
       toast.error(result.message)
@@ -76,6 +77,14 @@ export default function LoginPage() {
           >
             <FieldGroup>
               <Field>
+                <FieldLabel htmlFor="login-tenant">Tenant</FieldLabel>
+                <Input
+                  id="login-tenant"
+                  value={tenantSlug}
+                  onChange={(event) => setTenantSlug(event.target.value)}
+                />
+              </Field>
+              <Field>
                 <FieldLabel htmlFor="login-email">E-posta</FieldLabel>
                 <Input
                   id="login-email"
@@ -98,8 +107,8 @@ export default function LoginPage() {
               <FieldLabel>Demo Hesaplar</FieldLabel>
               <FieldContent>
                 <div className="space-y-2 rounded-lg border p-3 text-sm">
-                  <p>admin@demo.com / demo123</p>
-                  <p>satis@demo.com / demo123</p>
+                  <p>demo / admin@demo.com / demo123</p>
+                  <p>demo / satis@demo.com / demo123</p>
                 </div>
                 <FieldDescription>
                   Giris sonrasinda uygulama paneline dogrudan yonlendirilirsiniz.

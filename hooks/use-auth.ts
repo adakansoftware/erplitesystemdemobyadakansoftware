@@ -121,9 +121,10 @@ export function useAuth() {
       isAuthenticated: Boolean(state.currentUser),
       isAdmin: state.currentUser?.role === 'admin',
       isManager: ['admin', 'manager'].includes(state.currentUser?.role ?? ''),
-      login: async (email: string, password: string) => {
+      login: async (tenantSlug: string, email: string, password: string) => {
         try {
           const result = await api.post<{ user?: unknown }>('/auth/login', {
+            tenantSlug,
             email,
             password,
           })

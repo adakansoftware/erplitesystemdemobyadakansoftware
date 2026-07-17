@@ -51,6 +51,14 @@ beforeEach(() => {
   selectWhereMock
     .mockResolvedValueOnce([
       {
+        id: 'ten-1',
+        slug: 'demo',
+        name: 'Demo Tenant',
+        active: true,
+      },
+    ])
+    .mockResolvedValueOnce([
+      {
         id: 'usr-1',
         tenantId: 'ten-1',
         name: 'Demo Admin',
@@ -90,7 +98,7 @@ describe('auth routes', () => {
     const client = testClient(appModule.app) as any
 
     const loginResponse = await client.api.auth.login.$post({
-      json: { email: 'admin@demo.com', password: 'demo123' },
+      json: { tenantSlug: 'demo', email: 'admin@demo.com', password: 'demo123' },
     })
 
     expect(loginResponse.status).toBe(200)
