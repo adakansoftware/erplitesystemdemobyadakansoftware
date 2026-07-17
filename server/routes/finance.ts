@@ -1,12 +1,12 @@
 import { Hono } from 'hono'
-import { and, eq, sql, type SQL } from 'drizzle-orm'
+import { and, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
-import { financeAccounts, transactions } from '../db/schema'
+import { currentAccounts, financeAccounts, transactions, users } from '../db/schema'
 import { audit } from '../lib/audit'
 import { cached, invalidate } from '../lib/cache'
 import { nextTransactionId } from '../lib/ids'
-import { created, ok } from '../lib/http'
+import { created, fail, ok } from '../lib/http'
 import { toNumber } from '../lib/serializers'
 import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
@@ -34,8 +34,31 @@ const transactionSchema = z.object({
 export const financeRoutes = new Hono()
 
 financeRoutes.get('/accounts', async (c) => {
+  const tenantId = c.get('tenantId')
   const accounts = await db.select().from(financeAccounts)
-  const txs = await db.select().from(transactions)
+  const [tenantAccounts, tenantUsers] = await Promise.all([
+    tenantId
+      ? db.select({ id: currentAccounts.id }).from(currentAccounts).where(eq(currentAccounts.tenantId, tenantId))
+      : Promise.resolve([]),
+    tenantId
+      ? db.select({ id: users.id }).from(users).where(eq(users.tenantId, tenantId))
+      : Promise.resolve([]),
+  ])
+  const currentAccountIds = tenantAccounts.map((item) => item.id)
+  const userIds = tenantUsers.map((item) => item.id)
+  const txs = await db
+    .select()
+    .from(transactions)
+    .where(
+      tenantId
+        ? or(
+            currentAccountIds.length
+              ? inArray(transactions.currentAccountId, currentAccountIds)
+              : undefined,
+            userIds.length ? inArray(transactions.createdBy, userIds) : undefined,
+          )
+        : undefined,
+    )
   const result = accounts.map((account) => ({
     ...account,
     balance: txs
@@ -63,12 +86,31 @@ financeRoutes.post('/accounts', validate(financeAccountSchema), async (c) => {
 })
 
 financeRoutes.get('/transactions', async (c) => {
+  const tenantId = c.get('tenantId')
   const accountId = c.req.query('accountId')
   const type = c.req.query('type')
   const page = Math.max(1, Number(c.req.query('page') ?? 1))
   const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
   const offset = (page - 1) * limit
+  const [tenantAccounts, tenantUsers] = await Promise.all([
+    tenantId
+      ? db.select({ id: currentAccounts.id }).from(currentAccounts).where(eq(currentAccounts.tenantId, tenantId))
+      : Promise.resolve([]),
+    tenantId
+      ? db.select({ id: users.id }).from(users).where(eq(users.tenantId, tenantId))
+      : Promise.resolve([]),
+  ])
+  const currentAccountIds = tenantAccounts.map((item) => item.id)
+  const userIds = tenantUsers.map((item) => item.id)
   const filters: SQL[] = [
+    tenantId
+      ? or(
+          currentAccountIds.length
+            ? inArray(transactions.currentAccountId, currentAccountIds)
+            : undefined,
+          userIds.length ? inArray(transactions.createdBy, userIds) : undefined,
+        )
+      : undefined,
     accountId ? eq(transactions.financeAccountId, accountId) : undefined,
     type ? eq(transactions.type, type) : undefined,
   ].filter((filter): filter is SQL => filter !== undefined)
@@ -102,6 +144,17 @@ financeRoutes.get('/transactions', async (c) => {
 
 financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof transactionSchema>
+  const tenantId = c.get('tenantId')
+  if (tenantId && body.currentAccountId) {
+    const [account] = await db
+      .select({ id: currentAccounts.id })
+      .from(currentAccounts)
+      .where(and(eq(currentAccounts.id, body.currentAccountId), eq(currentAccounts.tenantId, tenantId)))
+
+    if (!account) {
+      return fail(c, 404, 'Current account not found')
+    }
+  }
   const ids = await db.select({ id: transactions.id }).from(transactions)
   const id = body.id ?? nextTransactionId(ids.map((item) => item.id))
   await db.insert(transactions).values({
@@ -113,6 +166,7 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
     type: body.type,
     amount: String(body.amount),
     currentAccountId: body.currentAccountId,
+    createdBy: (c.get('user') as { id?: string } | undefined)?.id,
   })
   await invalidate('reports:cashflow:*')
   await audit({
@@ -130,16 +184,53 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
 
 financeRoutes.delete('/transactions/:id', requireRole('admin'), async (c) => {
   const id = c.req.param('id')
-  await db.delete(transactions).where(eq(transactions.id, id))
+  const tenantId = c.get('tenantId')
+  const tenantAccounts = tenantId
+    ? await db.select({ id: currentAccounts.id }).from(currentAccounts).where(eq(currentAccounts.tenantId, tenantId))
+    : []
+  const currentAccountIds = tenantAccounts.map((item) => item.id)
+  await db
+    .delete(transactions)
+    .where(
+      and(
+        eq(transactions.id, id),
+        ...(tenantId && currentAccountIds.length
+          ? [inArray(transactions.currentAccountId, currentAccountIds)]
+          : []),
+      ),
+    )
   await invalidate('reports:cashflow:*')
   await invalidate('finance:summary')
   return ok(c, { id })
 })
 
 financeRoutes.get('/summary', async (c) => {
-  const summary = await cached('finance:summary', 60, async () => {
+  const tenantId = c.get('tenantId')
+  const summary = await cached(tenantId ? `finance:summary:${tenantId}` : 'finance:summary', 60, async () => {
+    const [tenantAccounts, tenantUsers] = await Promise.all([
+      tenantId
+        ? db.select({ id: currentAccounts.id }).from(currentAccounts).where(eq(currentAccounts.tenantId, tenantId))
+        : Promise.resolve([]),
+      tenantId
+        ? db.select({ id: users.id }).from(users).where(eq(users.tenantId, tenantId))
+        : Promise.resolve([]),
+    ])
     const accounts = await db.select().from(financeAccounts)
-    const txs = await db.select().from(transactions)
+    const currentAccountIds = tenantAccounts.map((item) => item.id)
+    const userIds = tenantUsers.map((item) => item.id)
+    const txs = await db
+      .select()
+      .from(transactions)
+      .where(
+        tenantId
+          ? or(
+              currentAccountIds.length
+                ? inArray(transactions.currentAccountId, currentAccountIds)
+                : undefined,
+              userIds.length ? inArray(transactions.createdBy, userIds) : undefined,
+            )
+          : undefined,
+      )
     const result = accounts.reduce(
       (acc, account) => {
         const balance = txs

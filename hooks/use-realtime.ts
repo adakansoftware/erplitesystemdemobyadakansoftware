@@ -14,11 +14,13 @@ function resolveRealtimeUrl() {
 
   const configured = process.env.NEXT_PUBLIC_WS_URL?.trim()
   if (configured) {
-    return `${configured.replace(/\/$/, '')}/api/ws`
+    return `${configured.replace(/\/$/, '')}/ws`
   }
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/api/ws`
+  const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  const host = isLocalhost ? `${window.location.hostname}:3001` : window.location.host
+  return `${protocol}//${host}/ws`
 }
 
 export function useRealtime() {

@@ -32,12 +32,14 @@ const quotationSchema = z.object({
 export const quotationsRoutes = new Hono()
 
 quotationsRoutes.get('/', async (c) => {
+  const tenantId = c.get('tenantId')
   const status = c.req.query('status')
   const search = c.req.query('search')
   const page = Math.max(1, Number(c.req.query('page') ?? 1))
   const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
   const offset = (page - 1) * limit
   const filters: SQL[] = [
+    tenantId ? eq(quotations.tenantId, tenantId) : undefined,
     status ? eq(quotations.status, status) : undefined,
     search ? ilike(quotations.customer, `%${search}%`) : undefined,
   ].filter((filter): filter is SQL => filter !== undefined)
@@ -77,7 +79,16 @@ quotationsRoutes.get('/', async (c) => {
 
 quotationsRoutes.get('/:id', async (c) => {
   const id = c.req.param('id')
-  const [quotation] = await db.select().from(quotations).where(eq(quotations.id, id))
+  const tenantId = c.get('tenantId')
+  const [quotation] = await db
+    .select()
+    .from(quotations)
+    .where(
+      and(
+        eq(quotations.id, id),
+        ...(tenantId ? [eq(quotations.tenantId, tenantId)] : []),
+      ),
+    )
   if (!quotation) return fail(c, 404, 'Quotation not found')
   const lines = await db.select().from(quotationLines).where(eq(quotationLines.quotationId, id))
   return ok(c, {
@@ -97,10 +108,12 @@ quotationsRoutes.get('/:id', async (c) => {
 
 quotationsRoutes.post('/', validate(quotationSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof quotationSchema>
+  const tenantId = c.get('tenantId')
   const ids = await db.select({ id: quotations.id }).from(quotations)
   const id = nextDocumentId(ids.map((item) => item.id), 'TKL')
   await db.insert(quotations).values({
     id,
+    tenantId,
     currentAccountId: body.currentAccountId,
     customer: body.customer,
     date: body.date,
@@ -134,8 +147,25 @@ quotationsRoutes.post('/', validate(quotationSchema), async (c) => {
 quotationsRoutes.put('/:id', validate(quotationSchema.partial()), async (c) => {
   const id = c.req.param('id')
   const body = c.get('validatedBody') as Partial<z.infer<typeof quotationSchema>>
-  const [existingQuotation] = await db.select().from(quotations).where(eq(quotations.id, id))
-  await db.update(quotations).set({ ...body, updatedAt: new Date() }).where(eq(quotations.id, id))
+  const tenantId = c.get('tenantId')
+  const [existingQuotation] = await db
+    .select()
+    .from(quotations)
+    .where(
+      and(
+        eq(quotations.id, id),
+        ...(tenantId ? [eq(quotations.tenantId, tenantId)] : []),
+      ),
+    )
+  await db
+    .update(quotations)
+    .set({ ...body, updatedAt: new Date() })
+    .where(
+      and(
+        eq(quotations.id, id),
+        ...(tenantId ? [eq(quotations.tenantId, tenantId)] : []),
+      ),
+    )
 
   if (body.status === 'sent') {
     const [account] = existingQuotation?.currentAccountId
@@ -156,14 +186,31 @@ quotationsRoutes.put('/:id', validate(quotationSchema.partial()), async (c) => {
 
 quotationsRoutes.delete('/:id', async (c) => {
   const id = c.req.param('id')
+  const tenantId = c.get('tenantId')
   await db.delete(quotationLines).where(eq(quotationLines.quotationId, id))
-  await db.delete(quotations).where(eq(quotations.id, id))
+  await db
+    .delete(quotations)
+    .where(
+      and(
+        eq(quotations.id, id),
+        ...(tenantId ? [eq(quotations.tenantId, tenantId)] : []),
+      ),
+    )
   return ok(c, { id })
 })
 
 quotationsRoutes.post('/:id/convert-to-invoice', async (c) => {
   const id = c.req.param('id')
-  const [quotation] = await db.select().from(quotations).where(eq(quotations.id, id))
+  const tenantId = c.get('tenantId')
+  const [quotation] = await db
+    .select()
+    .from(quotations)
+    .where(
+      and(
+        eq(quotations.id, id),
+        ...(tenantId ? [eq(quotations.tenantId, tenantId)] : []),
+      ),
+    )
   if (!quotation) return fail(c, 404, 'Quotation not found')
   const lines = await db.select().from(quotationLines).where(eq(quotationLines.quotationId, id))
   const invoiceIds = await db.select({ id: invoices.id }).from(invoices)
@@ -171,6 +218,7 @@ quotationsRoutes.post('/:id/convert-to-invoice', async (c) => {
 
   await db.insert(invoices).values({
     id: invoiceId,
+    tenantId,
     currentAccountId: quotation.currentAccountId,
     customer: quotation.customer,
     issueDate: quotation.date,
@@ -194,7 +242,12 @@ quotationsRoutes.post('/:id/convert-to-invoice', async (c) => {
   await db
     .update(quotations)
     .set({ status: 'accepted', convertedToInvoiceId: invoiceId, updatedAt: new Date() })
-    .where(eq(quotations.id, id))
+    .where(
+      and(
+        eq(quotations.id, id),
+        ...(tenantId ? [eq(quotations.tenantId, tenantId)] : []),
+      ),
+    )
   await invalidate('reports:sales:*')
   await invalidate('products:*')
   eventBus.emit('quotation.accepted', {

@@ -18,6 +18,7 @@ import {
   quotations as quotationsTable,
   stockMovements as stockMovementsTable,
   tasks as tasksTable,
+  tenants,
   transactions as transactionsTable,
   users,
   warehouses as warehousesTable,
@@ -55,8 +56,19 @@ async function main() {
     product_categories,
     current_accounts,
     company_settings,
+    tenants,
     users
     restart identity cascade`)
+
+  const [defaultTenant] = await db
+    .insert(tenants)
+    .values({
+      slug: 'demo',
+      name: 'Demo Tenant',
+      plan: 'starter',
+      active: true,
+    })
+    .returning()
 
   const categoryMap = new Map<string, string>()
   for (const category of mockCategories) {
@@ -70,12 +82,23 @@ async function main() {
   const [adminUser] = await db
     .insert(users)
     .values({
+      tenantId: defaultTenant.id,
       email: 'admin@demo.com',
       passwordHash: hashPassword('demo123'),
       name: 'Mehmet Adakan',
       role: 'admin',
     })
     .returning()
+
+  await db
+    .insert(users)
+    .values({
+      tenantId: defaultTenant.id,
+      email: 'satis@demo.com',
+      passwordHash: hashPassword('demo123'),
+      name: 'Satis Temsilcisi',
+      role: 'sales',
+    })
 
   await db.insert(companySettings).values({
     id: 1,
@@ -94,6 +117,7 @@ async function main() {
   await db.insert(currentAccountsTable).values(
     currentAccounts.map((account) => ({
       id: account.id,
+      tenantId: defaultTenant.id,
       name: account.name,
       type: account.type,
       taxNumber: account.taxNumber,
@@ -107,6 +131,7 @@ async function main() {
   await db.insert(productsTable).values(
     products.map((product) => ({
       id: product.id,
+      tenantId: defaultTenant.id,
       name: product.name,
       sku: product.sku,
       barcode: product.barcode,
@@ -219,6 +244,7 @@ async function main() {
     const account = currentAccounts.find((item) => item.name === quotation.customer)
     await db.insert(quotationsTable).values({
       id: quotation.id,
+      tenantId: defaultTenant.id,
       currentAccountId: account?.id,
       customer: quotation.customer,
       date: quotation.date,
@@ -243,6 +269,7 @@ async function main() {
     const account = currentAccounts.find((item) => item.name === invoice.customer)
     await db.insert(invoicesTable).values({
       id: invoice.id,
+      tenantId: defaultTenant.id,
       currentAccountId: account?.id,
       customer: invoice.customer,
       issueDate: invoice.issueDate,
@@ -268,6 +295,7 @@ async function main() {
     const account = currentAccounts.find((item) => item.name === purchase.supplier)
     await db.insert(purchaseOrdersTable).values({
       id: purchase.id,
+      tenantId: defaultTenant.id,
       currentAccountId: account?.id,
       supplier: purchase.supplier,
       orderDate: purchase.orderDate,

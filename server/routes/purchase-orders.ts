@@ -35,12 +35,14 @@ const purchaseSchema = z.object({
 export const purchaseOrdersRoutes = new Hono()
 
 purchaseOrdersRoutes.get('/', async (c) => {
+  const tenantId = c.get('tenantId')
   const status = c.req.query('status')
   const search = c.req.query('search')
   const page = Math.max(1, Number(c.req.query('page') ?? 1))
   const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
   const offset = (page - 1) * limit
   const filters: SQL[] = [
+    tenantId ? eq(purchaseOrders.tenantId, tenantId) : undefined,
     status ? eq(purchaseOrders.status, status) : undefined,
     search ? ilike(purchaseOrders.supplier, `%${search}%`) : undefined,
   ].filter((filter): filter is SQL => filter !== undefined)
@@ -81,7 +83,16 @@ purchaseOrdersRoutes.get('/', async (c) => {
 
 purchaseOrdersRoutes.get('/:id', async (c) => {
   const id = c.req.param('id')
-  const [purchase] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id))
+  const tenantId = c.get('tenantId')
+  const [purchase] = await db
+    .select()
+    .from(purchaseOrders)
+    .where(
+      and(
+        eq(purchaseOrders.id, id),
+        ...(tenantId ? [eq(purchaseOrders.tenantId, tenantId)] : []),
+      ),
+    )
   if (!purchase) return fail(c, 404, 'Purchase order not found')
   const lines = await db.select().from(purchaseOrderLines).where(eq(purchaseOrderLines.purchaseOrderId, id))
   return ok(c, {
@@ -102,10 +113,12 @@ purchaseOrdersRoutes.get('/:id', async (c) => {
 
 purchaseOrdersRoutes.post('/', validate(purchaseSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof purchaseSchema>
+  const tenantId = c.get('tenantId')
   const ids = await db.select({ id: purchaseOrders.id }).from(purchaseOrders)
   const id = nextDocumentId(ids.map((item) => item.id), 'SPA')
   await db.insert(purchaseOrders).values({
     id,
+    tenantId,
     currentAccountId: body.currentAccountId,
     supplier: body.supplier,
     orderDate: body.orderDate,
@@ -132,10 +145,16 @@ purchaseOrdersRoutes.post('/', validate(purchaseSchema), async (c) => {
 purchaseOrdersRoutes.put('/:id/status', requireRole('admin', 'manager'), validate(z.object({ status: z.string() })), async (c) => {
   const id = c.req.param('id')
   const body = c.get('validatedBody') as { status: string }
+  const tenantId = c.get('tenantId')
   await db
     .update(purchaseOrders)
     .set({ status: body.status, updatedAt: new Date() })
-    .where(eq(purchaseOrders.id, id))
+    .where(
+      and(
+        eq(purchaseOrders.id, id),
+        ...(tenantId ? [eq(purchaseOrders.tenantId, tenantId)] : []),
+      ),
+    )
   return ok(c, { id, status: body.status })
 })
 
@@ -144,6 +163,7 @@ purchaseOrdersRoutes.post('/:id/receive', validate(z.object({
 })), async (c) => {
   const id = c.req.param('id')
   const body = c.get('validatedBody') as { lines: Array<{ lineId: string; receivedQty: number }> }
+  const tenantId = c.get('tenantId')
   const existingLines = await db
     .select()
     .from(purchaseOrderLines)
@@ -164,7 +184,12 @@ purchaseOrdersRoutes.post('/:id/receive', validate(z.object({
   await db
     .update(purchaseOrders)
     .set({ status: fullyReceived ? 'received' : 'partial', updatedAt: new Date() })
-    .where(eq(purchaseOrders.id, id))
+    .where(
+      and(
+        eq(purchaseOrders.id, id),
+        ...(tenantId ? [eq(purchaseOrders.tenantId, tenantId)] : []),
+      ),
+    )
 
   await createStockInForPurchaseOrder(id)
   await invalidate('products:*')

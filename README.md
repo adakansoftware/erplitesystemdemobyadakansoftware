@@ -101,6 +101,7 @@ npm run dev:api:watch
 - `APP_ORIGIN`: Next.js frontend URL'i. CORS izinleri bu adres uzerinden verilir.
 - `API_PROXY_TARGET`: Next.js proxy'nin yonlendirecegi Hono backend adresi.
 - `REDIS_URL`: BullMQ ve cache katmani icin Redis baglanti adresi.
+- `NEXT_PUBLIC_WS_URL`: frontend realtime baglantisi icin WebSocket adresi. Ornek: `ws://127.0.0.1:3001`
 - `UPSTASH_REDIS_REST_*`: rate limiting icin serverless Redis bilgileri.
 - `SMTP_*`: bildirim e-postalari icin SMTP ayarlari
 

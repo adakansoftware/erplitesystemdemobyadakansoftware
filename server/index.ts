@@ -178,7 +178,7 @@ async function authorizeUpgrade(req: IncomingMessage) {
 
 server.on('upgrade', async (req, socket, head) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
-  if (url.pathname !== '/api/ws') {
+  if (url.pathname !== '/api/ws' && url.pathname !== '/ws') {
     socket.destroy()
     return
   }

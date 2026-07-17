@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, sql, type SQL } from 'drizzle-orm'
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { productCategories, products, stockMovements, warehouses } from '../db/schema'
@@ -29,11 +29,17 @@ const warehouseSchema = z.object({
 export const stockRoutes = new Hono()
 
 stockRoutes.get('/movements', async (c) => {
+  const tenantId = c.get('tenantId')
   const productId = c.req.query('productId')
   const warehouseId = c.req.query('warehouseId')
   const type = c.req.query('type')
 
+  const tenantProducts = tenantId
+    ? await db.select({ id: products.id }).from(products).where(eq(products.tenantId, tenantId))
+    : []
+  const productIds = tenantProducts.map((item) => item.id)
   const filters: SQL[] = [
+    tenantId && productIds.length ? inArray(stockMovements.productId, productIds) : undefined,
     productId ? eq(stockMovements.productId, productId) : undefined,
     warehouseId ? eq(stockMovements.warehouseId, warehouseId) : undefined,
     type ? eq(stockMovements.type, type) : undefined,
@@ -44,7 +50,7 @@ stockRoutes.get('/movements', async (c) => {
     .from(stockMovements)
     .where(filters.length ? and(...filters) : undefined)
   const [productItems, warehouseItems] = await Promise.all([
-    db.select().from(products),
+    db.select().from(products).where(tenantId ? eq(products.tenantId, tenantId) : undefined),
     db.select().from(warehouses),
   ])
   const productMap = new Map(productItems.map((product) => [product.id, product]))
@@ -70,6 +76,17 @@ stockRoutes.get('/movements', async (c) => {
 
 stockRoutes.post('/movements', validate(movementSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof movementSchema>
+  const tenantId = c.get('tenantId')
+  if (tenantId) {
+    const [product] = await db
+      .select({ id: products.id })
+      .from(products)
+      .where(and(eq(products.id, body.productId), eq(products.tenantId, tenantId)))
+
+    if (!product) {
+      return fail(c, 404, 'Product not found')
+    }
+  }
   if (body.type === 'out') {
     const currentStock = await getProductStock(body.productId)
     if (currentStock < Math.abs(body.qty)) {
@@ -107,9 +124,10 @@ stockRoutes.post('/movements', validate(movementSchema), async (c) => {
 })
 
 stockRoutes.get('/summary', async (c) => {
-  const summary = await cached('stock:summary', 60, async () => {
+  const tenantId = c.get('tenantId')
+  const summary = await cached(tenantId ? `stock:summary:${tenantId}` : 'stock:summary', 60, async () => {
     const [items, categories] = await Promise.all([
-      db.select().from(products),
+      db.select().from(products).where(tenantId ? eq(products.tenantId, tenantId) : undefined),
       db.select().from(productCategories),
     ])
     const categoryMap = new Map(categories.map((category) => [category.id, category.name]))
