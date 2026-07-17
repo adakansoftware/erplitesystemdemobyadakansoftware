@@ -114,6 +114,16 @@ financeRoutes.get('/transactions', async (c) => {
 financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof transactionSchema>
   const tenantId = c.get('tenantId')
+  if (tenantId) {
+    const [financeAccount] = await db
+      .select({ id: financeAccounts.id })
+      .from(financeAccounts)
+      .where(and(eq(financeAccounts.id, body.financeAccountId), eq(financeAccounts.tenantId, tenantId)))
+
+    if (!financeAccount) {
+      return fail(c, 404, 'Finance account not found')
+    }
+  }
   if (tenantId && body.currentAccountId) {
     const [account] = await db
       .select({ id: currentAccounts.id })

@@ -2,10 +2,49 @@ import { Hono } from 'hono'
 import { and, eq, ilike, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
-import { companies, contacts, deals, leads, tasks } from '../db/schema'
-import { created, ok } from '../lib/http'
+import { companies, contacts, currentAccounts, deals, leads, tasks, users } from '../db/schema'
+import { created, fail, ok } from '../lib/http'
 import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
+
+async function ensureCurrentAccountBelongsToTenant(
+  tenantId: string | undefined,
+  currentAccountId: string | null | undefined,
+) {
+  if (!tenantId || !currentAccountId) return true
+
+  const [account] = await db
+    .select({ id: currentAccounts.id })
+    .from(currentAccounts)
+    .where(and(eq(currentAccounts.id, currentAccountId), eq(currentAccounts.tenantId, tenantId)))
+
+  return Boolean(account)
+}
+
+async function ensureCompanyBelongsToTenant(tenantId: string | undefined, companyId: string | null | undefined) {
+  if (!tenantId || !companyId) return true
+
+  const [company] = await db
+    .select({ id: companies.id })
+    .from(companies)
+    .where(and(eq(companies.id, companyId), eq(companies.tenantId, tenantId)))
+
+  return Boolean(company)
+}
+
+async function ensureAssignedUserBelongsToTenant(
+  tenantId: string | undefined,
+  assignedTo: string | null | undefined,
+) {
+  if (!tenantId || !assignedTo) return true
+
+  const [user] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.id, assignedTo), eq(users.tenantId, tenantId)))
+
+  return Boolean(user)
+}
 
 function crudRoutes<T extends z.ZodTypeAny>(
   app: Hono,
@@ -35,6 +74,18 @@ function crudRoutes<T extends z.ZodTypeAny>(
   app.post(base, validate(schema), async (c) => {
     const body = c.get('validatedBody') as z.infer<T>
     const tenantId = c.get('tenantId')
+    if (base === '/companies' && !await ensureCurrentAccountBelongsToTenant(tenantId, (body as { currentAccountId?: string | null }).currentAccountId)) {
+      return fail(c, 404, 'Current account not found')
+    }
+    if (base === '/contacts' && !await ensureCompanyBelongsToTenant(tenantId, (body as { companyId?: string | null }).companyId)) {
+      return fail(c, 404, 'Company not found')
+    }
+    if (base === '/deals' && !await ensureCurrentAccountBelongsToTenant(tenantId, (body as { currentAccountId?: string | null }).currentAccountId)) {
+      return fail(c, 404, 'Current account not found')
+    }
+    if (base === '/tasks' && !await ensureAssignedUserBelongsToTenant(tenantId, (body as { assignedTo?: string | null }).assignedTo)) {
+      return fail(c, 404, 'Assigned user not found')
+    }
     await db.insert(table).values({
       ...(body as Record<string, unknown>),
       ...('tenantId' in table ? { tenantId } : {}),
@@ -136,9 +187,13 @@ crmRoutes.delete('/leads/:id', async (c) => {
 crmRoutes.put('/companies/:id', validate(companySchema.partial()), async (c) => {
   const id = c.req.param('id')
   const tenantId = c.get('tenantId')
+  const body = c.get('validatedBody') as Partial<z.infer<typeof companySchema>>
+  if (!await ensureCurrentAccountBelongsToTenant(tenantId, body.currentAccountId)) {
+    return fail(c, 404, 'Current account not found')
+  }
   await db
     .update(companies)
-    .set(c.get('validatedBody') as Partial<z.infer<typeof companySchema>>)
+    .set(body)
     .where(and(eq(companies.id, id), ...(tenantId ? [eq(companies.tenantId, tenantId)] : [])))
   return ok(c, { id })
 })
@@ -146,9 +201,13 @@ crmRoutes.put('/companies/:id', validate(companySchema.partial()), async (c) => 
 crmRoutes.put('/contacts/:id', validate(contactSchema.partial()), async (c) => {
   const id = c.req.param('id')
   const tenantId = c.get('tenantId')
+  const body = c.get('validatedBody') as Partial<z.infer<typeof contactSchema>>
+  if (!await ensureCompanyBelongsToTenant(tenantId, body.companyId)) {
+    return fail(c, 404, 'Company not found')
+  }
   await db
     .update(contacts)
-    .set(c.get('validatedBody') as Partial<z.infer<typeof contactSchema>>)
+    .set(body)
     .where(and(eq(contacts.id, id), ...(tenantId ? [eq(contacts.tenantId, tenantId)] : [])))
   return ok(c, { id })
 })
@@ -157,6 +216,9 @@ crmRoutes.put('/deals/:id', validate(dealSchema.partial()), async (c) => {
   const id = c.req.param('id')
   const tenantId = c.get('tenantId')
   const body = c.get('validatedBody') as Partial<z.infer<typeof dealSchema>>
+  if (!await ensureCurrentAccountBelongsToTenant(tenantId, body.currentAccountId)) {
+    return fail(c, 404, 'Current account not found')
+  }
   await db
     .update(deals)
     .set({
@@ -171,9 +233,13 @@ crmRoutes.put('/deals/:id', validate(dealSchema.partial()), async (c) => {
 crmRoutes.put('/tasks/:id', validate(taskSchema.partial()), async (c) => {
   const id = c.req.param('id')
   const tenantId = c.get('tenantId')
+  const body = c.get('validatedBody') as Partial<z.infer<typeof taskSchema>>
+  if (!await ensureAssignedUserBelongsToTenant(tenantId, body.assignedTo)) {
+    return fail(c, 404, 'Assigned user not found')
+  }
   await db
     .update(tasks)
-    .set(c.get('validatedBody') as Partial<z.infer<typeof taskSchema>>)
+    .set(body)
     .where(and(eq(tasks.id, id), ...(tenantId ? [eq(tasks.tenantId, tenantId)] : [])))
   return ok(c, { id })
 })
