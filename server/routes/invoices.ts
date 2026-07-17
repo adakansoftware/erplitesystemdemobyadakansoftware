@@ -174,6 +174,18 @@ invoicesRoutes.put('/:id/status', validate(z.object({ status: z.string() })), as
   const id = c.req.param('id')
   const body = c.get('validatedBody') as { status: string }
   const tenantId = c.get('tenantId')
+  const [existingInvoice] = await db
+    .select()
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.id, id),
+        ...(tenantId ? [eq(invoices.tenantId, tenantId)] : []),
+      ),
+    )
+  if (!existingInvoice) {
+    return fail(c, 404, 'Invoice not found')
+  }
   await db
     .update(invoices)
     .set({ status: body.status, updatedAt: new Date() })
@@ -332,7 +344,10 @@ invoicesRoutes.delete('/:id', requireRole('admin', 'manager'), async (c) => {
         ...(tenantId ? [eq(invoices.tenantId, tenantId)] : []),
       ),
     )
-  if (invoice?.status !== 'draft') {
+  if (!invoice) {
+    return fail(c, 404, 'Invoice not found')
+  }
+  if (invoice.status !== 'draft') {
     return fail(c, 422, 'Only draft invoices can be deleted')
   }
   await db.delete(invoiceLines).where(eq(invoiceLines.invoiceId, id))

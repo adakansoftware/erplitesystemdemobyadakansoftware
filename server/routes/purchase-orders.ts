@@ -151,6 +151,18 @@ purchaseOrdersRoutes.put('/:id/status', requireRole('admin', 'manager'), validat
   const id = c.req.param('id')
   const body = c.get('validatedBody') as { status: string }
   const tenantId = c.get('tenantId')
+  const [purchaseOrder] = await db
+    .select()
+    .from(purchaseOrders)
+    .where(
+      and(
+        eq(purchaseOrders.id, id),
+        ...(tenantId ? [eq(purchaseOrders.tenantId, tenantId)] : []),
+      ),
+    )
+  if (!purchaseOrder) {
+    return fail(c, 404, 'Purchase order not found')
+  }
   await db
     .update(purchaseOrders)
     .set({ status: body.status, updatedAt: new Date() })
@@ -169,10 +181,27 @@ purchaseOrdersRoutes.post('/:id/receive', validate(z.object({
   const id = c.req.param('id')
   const body = c.get('validatedBody') as { lines: Array<{ lineId: string; receivedQty: number }> }
   const tenantId = c.get('tenantId')
+  const [purchaseOrder] = await db
+    .select()
+    .from(purchaseOrders)
+    .where(
+      and(
+        eq(purchaseOrders.id, id),
+        ...(tenantId ? [eq(purchaseOrders.tenantId, tenantId)] : []),
+      ),
+    )
+  if (!purchaseOrder) {
+    return fail(c, 404, 'Purchase order not found')
+  }
   const existingLines = await db
     .select()
     .from(purchaseOrderLines)
     .where(eq(purchaseOrderLines.purchaseOrderId, id))
+  const allowedLineIds = new Set(existingLines.map((line) => line.id))
+
+  if (body.lines.some((line) => !allowedLineIds.has(line.lineId))) {
+    return fail(c, 404, 'Purchase order line not found')
+  }
 
   for (const line of body.lines) {
     await db

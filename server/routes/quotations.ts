@@ -162,6 +162,9 @@ quotationsRoutes.put('/:id', validate(quotationSchema.partial()), async (c) => {
         ...(tenantId ? [eq(quotations.tenantId, tenantId)] : []),
       ),
     )
+  if (!existingQuotation) {
+    return fail(c, 404, 'Quotation not found')
+  }
   await db
     .update(quotations)
     .set({ ...body, updatedAt: new Date() })
@@ -200,6 +203,18 @@ quotationsRoutes.put('/:id', validate(quotationSchema.partial()), async (c) => {
 quotationsRoutes.delete('/:id', async (c) => {
   const id = c.req.param('id')
   const tenantId = c.get('tenantId')
+  const [quotation] = await db
+    .select()
+    .from(quotations)
+    .where(
+      and(
+        eq(quotations.id, id),
+        ...(tenantId ? [eq(quotations.tenantId, tenantId)] : []),
+      ),
+    )
+  if (!quotation) {
+    return fail(c, 404, 'Quotation not found')
+  }
   await db.delete(quotationLines).where(eq(quotationLines.quotationId, id))
   await db
     .delete(quotations)
