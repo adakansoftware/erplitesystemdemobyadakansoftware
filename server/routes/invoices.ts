@@ -154,6 +154,7 @@ invoicesRoutes.post('/', validate(invoiceSchema), async (c) => {
       productId: line.productId ?? null,
       quantity: line.quantity,
     })),
+    tenantId,
   )
   if (!stockCheck.ok) {
     return fail(c, 422, 'Insufficient stock', stockCheck)
@@ -163,7 +164,7 @@ invoicesRoutes.post('/', validate(invoiceSchema), async (c) => {
     .select({ id: invoices.id })
     .from(invoices)
     .where(tenantId ? eq(invoices.tenantId, tenantId) : undefined)
-  const id = nextDocumentId(ids.map((item) => item.id), 'FT')
+  const id = nextDocumentId(ids.map((item) => item.id), 'FT', tenantId)
   await db.insert(invoices).values({
     id,
     tenantId,
@@ -342,7 +343,7 @@ invoicesRoutes.put('/:id', validate(invoiceSchema), async (c) => {
       }
     }
 
-    const stock = await getProductStock(line.productId)
+    const stock = await getProductStock(line.productId, tenantId)
     const available = stock + (reservedQuantities[line.productId] ?? 0)
     if (available < line.quantity) {
       return fail(c, 422, 'Insufficient stock', {

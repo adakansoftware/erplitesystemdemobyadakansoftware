@@ -139,7 +139,7 @@ quotationsRoutes.post('/', validate(quotationSchema), async (c) => {
     .select({ id: quotations.id })
     .from(quotations)
     .where(tenantId ? eq(quotations.tenantId, tenantId) : undefined)
-  const id = nextDocumentId(ids.map((item) => item.id), 'TKL')
+  const id = nextDocumentId(ids.map((item) => item.id), 'TKL', tenantId)
   await db.insert(quotations).values({
     id,
     tenantId,
@@ -278,7 +278,7 @@ quotationsRoutes.post('/:id/convert-to-invoice', async (c) => {
     .select({ id: invoices.id })
     .from(invoices)
     .where(tenantId ? eq(invoices.tenantId, tenantId) : undefined)
-  const invoiceId = nextDocumentId(invoiceIds.map((item) => item.id), 'FT')
+  const invoiceId = nextDocumentId(invoiceIds.map((item) => item.id), 'FT', tenantId)
 
   await db.insert(invoices).values({
     id: invoiceId,

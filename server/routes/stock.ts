@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, sql, type SQL } from 'drizzle-orm'
+import { and, eq, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { productCategories, products, stockMovements, warehouses } from '../db/schema'
@@ -95,13 +95,13 @@ stockRoutes.post('/movements', validate(movementSchema), async (c) => {
     }
   }
   if (body.type === 'out') {
-    const currentStock = await getProductStock(body.productId)
+    const currentStock = await getProductStock(body.productId, tenantId)
     if (currentStock < Math.abs(body.qty)) {
       return fail(c, 422, 'Insufficient stock')
     }
   }
 
-  await db.insert(stockMovements).values({
+  const [movement] = await db.insert(stockMovements).values({
     tenantId,
     productId: body.productId,
     warehouseId: body.warehouseId ?? 'WH-01',
@@ -109,15 +109,18 @@ stockRoutes.post('/movements', validate(movementSchema), async (c) => {
     qty: String(body.qty),
     note: body.note,
     unitCost: body.unitCost != null ? String(body.unitCost) : undefined,
-  })
+  }).returning()
 
-  const [movement] = await db
+  const [product] = await db
     .select()
-    .from(stockMovements)
-    .orderBy(sql`${stockMovements.createdAt} desc`)
-    .limit(1)
-  const [product] = await db.select().from(products).where(eq(products.id, body.productId))
-  const currentStock = await getProductStock(body.productId)
+    .from(products)
+    .where(
+      and(
+        eq(products.id, body.productId),
+        ...(tenantId ? [eq(products.tenantId, tenantId)] : []),
+      ),
+    )
+  const currentStock = await getProductStock(body.productId, tenantId)
   if (product && currentStock <= Number(product.reorderPoint)) {
     eventBus.emit('stock.low', {
       productId: product.id,
@@ -145,8 +148,8 @@ stockRoutes.get('/summary', async (c) => {
         ...item,
         category: item.categoryId ? categoryMap.get(item.categoryId) ?? '' : '',
         supplierPrice: Number(item.costPrice ?? 0),
-        stock: await getProductStock(item.id),
-        totalStock: await getProductStock(item.id),
+        stock: await getProductStock(item.id, tenantId),
+        totalStock: await getProductStock(item.id, tenantId),
       })),
     )
   })

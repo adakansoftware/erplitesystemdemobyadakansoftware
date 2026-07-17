@@ -138,7 +138,7 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
     .select({ id: transactions.id })
     .from(transactions)
     .where(tenantId ? eq(transactions.tenantId, tenantId) : undefined)
-  const id = body.id ?? nextTransactionId(ids.map((item) => item.id))
+  const id = body.id ?? nextTransactionId(ids.map((item) => item.id), tenantId)
   await db.insert(transactions).values({
     id,
     date: body.date,

@@ -153,7 +153,7 @@ purchaseOrdersRoutes.post('/', validate(purchaseSchema), async (c) => {
     .select({ id: purchaseOrders.id })
     .from(purchaseOrders)
     .where(tenantId ? eq(purchaseOrders.tenantId, tenantId) : undefined)
-  const id = nextDocumentId(ids.map((item) => item.id), 'SPA')
+  const id = nextDocumentId(ids.map((item) => item.id), 'SPA', tenantId)
   await db.insert(purchaseOrders).values({
     id,
     tenantId,

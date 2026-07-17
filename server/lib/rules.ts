@@ -14,24 +14,32 @@ import {
 import { nextTransactionId } from './ids'
 import { toNumber } from './serializers'
 
-export async function getProductStock(productId: string) {
+export async function getProductStock(productId: string, tenantId?: string) {
   const [result] = await db
     .select({
       qty: sql<string>`coalesce(sum(case when ${stockMovements.type} = 'out' then -${stockMovements.qty} else ${stockMovements.qty} end), 0)`,
     })
     .from(stockMovements)
-    .where(eq(stockMovements.productId, productId))
+    .where(
+      and(
+        eq(stockMovements.productId, productId),
+        ...(tenantId ? [eq(stockMovements.tenantId, tenantId)] : []),
+      ),
+    )
 
   return toNumber(result?.qty)
 }
 
-export async function ensureStockAvailable(lines: Array<{ productId: string | null; quantity: number }>) {
+export async function ensureStockAvailable(
+  lines: Array<{ productId: string | null; quantity: number }>,
+  tenantId?: string,
+) {
   for (const line of lines) {
     if (!line.productId) {
       continue
     }
 
-    const stock = await getProductStock(line.productId)
+    const stock = await getProductStock(line.productId, tenantId)
     if (stock < line.quantity) {
       return {
         ok: false as const,
@@ -56,6 +64,7 @@ export async function createStockOutForInvoice(invoiceId: string, userId?: strin
       and(
         eq(stockMovements.relatedDocType, 'invoice'),
         eq(stockMovements.relatedDocId, invoiceId),
+        ...(invoice.tenantId ? [eq(stockMovements.tenantId, invoice.tenantId)] : []),
       ),
     )
 
@@ -101,6 +110,7 @@ export async function createStockInForPurchaseOrder(
       and(
         eq(stockMovements.relatedDocType, 'purchase_order'),
         eq(stockMovements.relatedDocId, purchaseOrderId),
+        ...(purchaseOrder.tenantId ? [eq(stockMovements.tenantId, purchaseOrder.tenantId)] : []),
       ),
     )
 
@@ -163,7 +173,7 @@ export async function createInvoicePaymentTransaction(
     .where(invoice.tenantId ? eq(transactions.tenantId, invoice.tenantId) : undefined)
 
   await db.insert(transactions).values({
-    id: nextTransactionId(ids.map((item) => item.id)),
+    id: nextTransactionId(ids.map((item) => item.id), invoice.tenantId),
     tenantId: invoice.tenantId,
     date: invoice.dueDate,
     description: `${invoice.customer} - Fatura tahsilati`,
@@ -199,11 +209,11 @@ export async function calculateCurrentAccountBalance(
   return toNumber(result?.balance)
 }
 
-export async function attachProductStocks<T extends { id: string }>(items: T[]) {
+export async function attachProductStocks<T extends { id: string; tenantId?: string | null }>(items: T[]) {
   return Promise.all(
     items.map(async (item) => ({
       ...item,
-      totalStock: await getProductStock(item.id),
+      totalStock: await getProductStock(item.id, item.tenantId ?? undefined),
     })),
   )
 }
