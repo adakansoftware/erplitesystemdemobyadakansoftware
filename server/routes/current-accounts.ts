@@ -52,7 +52,7 @@ currentAccountsRoutes.get('/', async (c) => {
   const withBalance = await Promise.all(
     items.map(async (item) => ({
       ...item,
-      balance: await calculateCurrentAccountBalance(item.id),
+      balance: await calculateCurrentAccountBalance(item.id, tenantId),
     })),
   )
   const total = Number(countResult[0]?.count ?? 0)
@@ -75,7 +75,7 @@ currentAccountsRoutes.get('/:id', async (c) => {
     return fail(c, 404, 'Current account not found')
   }
 
-  return ok(c, { ...account, balance: await calculateCurrentAccountBalance(id) })
+  return ok(c, { ...account, balance: await calculateCurrentAccountBalance(id, tenantId) })
 })
 
 currentAccountsRoutes.get('/:id/statement', async (c) => {
@@ -98,7 +98,12 @@ currentAccountsRoutes.get('/:id/statement', async (c) => {
   const rows = await db
     .select()
     .from(transactions)
-    .where(eq(transactions.currentAccountId, id))
+    .where(
+      and(
+        eq(transactions.currentAccountId, id),
+        ...(tenantId ? [eq(transactions.tenantId, tenantId)] : []),
+      ),
+    )
   return ok(c, rows)
 })
 

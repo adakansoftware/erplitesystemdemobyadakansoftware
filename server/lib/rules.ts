@@ -177,13 +177,21 @@ export async function createInvoicePaymentTransaction(
   return total
 }
 
-export async function calculateCurrentAccountBalance(currentAccountId: string) {
+export async function calculateCurrentAccountBalance(
+  currentAccountId: string,
+  tenantId?: string,
+) {
   const [result] = await db
     .select({
       balance: sql<string>`coalesce(sum(case when ${transactions.type} = 'income' then ${transactions.amount} else -${transactions.amount} end), 0)`,
     })
     .from(transactions)
-    .where(eq(transactions.currentAccountId, currentAccountId))
+    .where(
+      and(
+        eq(transactions.currentAccountId, currentAccountId),
+        ...(tenantId ? [eq(transactions.tenantId, tenantId)] : []),
+      ),
+    )
 
   return toNumber(result?.balance)
 }
