@@ -299,6 +299,18 @@ productsRoutes.post('/', validate(createSchema), async (c) => {
   if (body.categoryId && !categoryId) {
     return fail(c, 404, 'Category not found')
   }
+  const [existingSku] = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(
+      and(
+        eq(products.sku, body.sku),
+        ...(tenantId ? [eq(products.tenantId, tenantId)] : []),
+      ),
+    )
+  if (existingSku) {
+    return fail(c, 409, 'Product SKU already exists')
+  }
   await db.insert(products).values({
     id: body.id ?? `PRD-${Date.now()}`,
     tenantId,
@@ -337,6 +349,20 @@ productsRoutes.put('/:id', validate(updateSchema), async (c) => {
   const categoryId = await resolveCategoryId(body.category, body.categoryId, tenantId)
   if (body.categoryId && !categoryId) {
     return fail(c, 404, 'Category not found')
+  }
+  if (body.sku) {
+    const [existingSku] = await db
+      .select()
+      .from(products)
+      .where(
+        and(
+          eq(products.sku, body.sku),
+          ...(tenantId ? [eq(products.tenantId, tenantId)] : []),
+        ),
+      )
+    if (existingSku && existingSku.id !== id) {
+      return fail(c, 409, 'Product SKU already exists')
+    }
   }
   await db
     .update(products)

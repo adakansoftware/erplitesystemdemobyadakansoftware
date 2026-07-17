@@ -118,24 +118,30 @@ export const productCategories = pgTable(
   }),
 )
 
-export const products = pgTable('products', {
-  id: varchar('id', { length: 20 }).primaryKey(),
-  tenantId: uuid('tenant_id').references(() => tenants.id),
-  name: varchar('name', { length: 255 }).notNull(),
-  sku: varchar('sku', { length: 100 }).notNull().unique(),
-  barcode: varchar('barcode', { length: 50 }),
-  categoryId: uuid('category_id').references(() => productCategories.id),
-  brand: varchar('brand', { length: 100 }),
-  unit: varchar('unit', { length: 30 }).notNull().default('Adet'),
-  costPrice: numeric('cost_price', { precision: 15, scale: 2 }).notNull().default('0'),
-  salePrice: numeric('sale_price', { precision: 15, scale: 2 }).notNull().default('0'),
-  taxRate: numeric('tax_rate', { precision: 5, scale: 2 }).notNull().default('18'),
-  reorderPoint: integer('reorder_point').notNull().default(0),
-  status: varchar('status', { length: 20 }).notNull().default('active'),
-  description: text('description'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-})
+export const products = pgTable(
+  'products',
+  {
+    id: varchar('id', { length: 20 }).primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id),
+    name: varchar('name', { length: 255 }).notNull(),
+    sku: varchar('sku', { length: 100 }).notNull(),
+    barcode: varchar('barcode', { length: 50 }),
+    categoryId: uuid('category_id').references(() => productCategories.id),
+    brand: varchar('brand', { length: 100 }),
+    unit: varchar('unit', { length: 30 }).notNull().default('Adet'),
+    costPrice: numeric('cost_price', { precision: 15, scale: 2 }).notNull().default('0'),
+    salePrice: numeric('sale_price', { precision: 15, scale: 2 }).notNull().default('0'),
+    taxRate: numeric('tax_rate', { precision: 5, scale: 2 }).notNull().default('18'),
+    reorderPoint: integer('reorder_point').notNull().default(0),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    description: text('description'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    byTenantSku: uniqueIndex('products_tenant_sku_idx').on(table.tenantId, table.sku),
+  }),
+)
 
 export const warehouses = pgTable('warehouses', {
   id: varchar('id', { length: 20 }).primaryKey(),
