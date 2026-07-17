@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, ilike, sql, type SQL } from 'drizzle-orm'
+import { and, eq, ilike, inArray, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { currentAccounts, invoiceLines, invoices, quotationLines, quotations } from '../db/schema'
@@ -43,19 +43,24 @@ quotationsRoutes.get('/', async (c) => {
     status ? eq(quotations.status, status) : undefined,
     search ? ilike(quotations.customer, `%${search}%`) : undefined,
   ].filter((filter): filter is SQL => filter !== undefined)
-  const [items, lines, countResult] = await Promise.all([
+  const [items, countResult] = await Promise.all([
     db
       .select()
       .from(quotations)
       .where(filters.length ? and(...filters) : undefined)
       .limit(limit)
       .offset(offset),
-    db.select().from(quotationLines),
     db
       .select({ count: sql<string>`count(*)` })
       .from(quotations)
       .where(filters.length ? and(...filters) : undefined),
   ])
+  const lines = items.length
+    ? await db
+        .select()
+        .from(quotationLines)
+        .where(inArray(quotationLines.quotationId, items.map((item) => item.id)))
+    : []
   const total = Number(countResult[0]?.count ?? 0)
   return ok(
     c,
@@ -169,7 +174,15 @@ quotationsRoutes.put('/:id', validate(quotationSchema.partial()), async (c) => {
 
   if (body.status === 'sent') {
     const [account] = existingQuotation?.currentAccountId
-      ? await db.select().from(currentAccounts).where(eq(currentAccounts.id, existingQuotation.currentAccountId))
+      ? await db
+          .select()
+          .from(currentAccounts)
+          .where(
+            and(
+              eq(currentAccounts.id, existingQuotation.currentAccountId),
+              ...(tenantId ? [eq(currentAccounts.tenantId, tenantId)] : []),
+            ),
+          )
       : [null]
 
     if (account?.email) {

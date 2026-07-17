@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, ilike, sql, type SQL } from 'drizzle-orm'
+import { and, eq, ilike, inArray, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { currentAccounts, invoiceLines, invoices } from '../db/schema'
@@ -51,19 +51,21 @@ invoicesRoutes.get('/', async (c) => {
     status ? eq(invoices.status, status) : undefined,
     search ? ilike(invoices.customer, `%${search}%`) : undefined,
   ].filter((filter): filter is SQL => filter !== undefined)
-  const [items, lines, countResult] = await Promise.all([
+  const [items, countResult] = await Promise.all([
     db
       .select()
       .from(invoices)
       .where(filters.length ? and(...filters) : undefined)
       .limit(limit)
       .offset(offset),
-    db.select().from(invoiceLines),
     db
       .select({ count: sql<string>`count(*)` })
       .from(invoices)
       .where(filters.length ? and(...filters) : undefined),
   ])
+  const lines = items.length
+    ? await db.select().from(invoiceLines).where(inArray(invoiceLines.invoiceId, items.map((item) => item.id)))
+    : []
   const now = new Date().toISOString().slice(0, 10)
   const normalized = items.map((item) => ({
     ...item,
@@ -196,7 +198,15 @@ invoicesRoutes.put('/:id/status', validate(z.object({ status: z.string() })), as
         ),
       )
     const [account] = invoice?.currentAccountId
-      ? await db.select().from(currentAccounts).where(eq(currentAccounts.id, invoice.currentAccountId))
+      ? await db
+          .select()
+          .from(currentAccounts)
+          .where(
+            and(
+              eq(currentAccounts.id, invoice.currentAccountId),
+              ...(tenantId ? [eq(currentAccounts.tenantId, tenantId)] : []),
+            ),
+          )
       : [null]
 
     eventBus.emit('invoice.paid', {
@@ -214,6 +224,7 @@ invoicesRoutes.put('/:id/status', validate(z.object({ status: z.string() })), as
     }
   }
   await invalidate(tenantCachePattern('reports:cashflow', tenantId))
+  await invalidate(tenantCachePattern('finance:summary', tenantId))
   return ok(c, { id, status: body.status })
 })
 

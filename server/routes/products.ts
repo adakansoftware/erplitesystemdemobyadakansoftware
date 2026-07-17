@@ -168,12 +168,20 @@ productsRoutes.get('/:id', async (c) => {
   const [category] = product.categoryId
     ? await db.select().from(productCategories).where(eq(productCategories.id, product.categoryId))
     : [null]
-  const warehouseItems = await db.select().from(warehouses)
+  const warehouseItems = await db
+    .select()
+    .from(warehouses)
+    .where(tenantId ? eq(warehouses.tenantId, tenantId) : undefined)
   const warehouseMap = new Map(warehouseItems.map((warehouse) => [warehouse.id, warehouse.name]))
   const movements = await db
     .select()
     .from(stockMovements)
-    .where(eq(stockMovements.productId, product.id))
+    .where(
+      and(
+        eq(stockMovements.productId, product.id),
+        ...(tenantId ? [eq(stockMovements.tenantId, tenantId)] : []),
+      ),
+    )
 
   return ok(c, {
     ...product,
@@ -196,13 +204,33 @@ productsRoutes.get('/:id', async (c) => {
 
 productsRoutes.get('/:id/stock', async (c) => {
   const id = c.req.param('id')
+  const tenantId = c.get('tenantId')
+  const [product] = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(
+      and(
+        eq(products.id, id),
+        ...(tenantId ? [eq(products.tenantId, tenantId)] : []),
+      ),
+    )
+
+  if (!product) {
+    return fail(c, 404, 'Product not found')
+  }
+
   const rows = await db
     .select({
       warehouseId: stockMovements.warehouseId,
       qty: sql<string>`coalesce(sum(case when ${stockMovements.type} = 'out' then -${stockMovements.qty} else ${stockMovements.qty} end), 0)`,
     })
     .from(stockMovements)
-    .where(eq(stockMovements.productId, id))
+    .where(
+      and(
+        eq(stockMovements.productId, id),
+        ...(tenantId ? [eq(stockMovements.tenantId, tenantId)] : []),
+      ),
+    )
     .groupBy(stockMovements.warehouseId)
 
   return ok(c, rows)

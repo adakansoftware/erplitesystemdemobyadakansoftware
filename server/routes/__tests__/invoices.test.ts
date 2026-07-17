@@ -80,21 +80,23 @@ beforeEach(() => {
       }),
     }))
     .mockImplementationOnce(() => ({
-      from: async () => [
-        {
-          invoiceId: 'FT-001',
-          productId: 'PRD-001',
-          product: 'Demo Urun',
-          quantity: '2',
-          unitPrice: '100',
-          taxRate: '20',
-          lineOrder: 0,
-        },
-      ],
+      from: () => ({
+        where: async () => [{ count: '1' }],
+      }),
     }))
     .mockImplementationOnce(() => ({
       from: () => ({
-        where: async () => [{ count: '1' }],
+        where: async () => [
+          {
+            invoiceId: 'FT-001',
+            productId: 'PRD-001',
+            product: 'Demo Urun',
+            quantity: '2',
+            unitPrice: '100',
+            taxRate: '20',
+            lineOrder: 0,
+          },
+        ],
       }),
     }))
 })

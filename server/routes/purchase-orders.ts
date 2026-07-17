@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, ilike, sql, type SQL } from 'drizzle-orm'
+import { and, eq, ilike, inArray, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { purchaseOrderLines, purchaseOrders } from '../db/schema'
@@ -46,19 +46,24 @@ purchaseOrdersRoutes.get('/', async (c) => {
     status ? eq(purchaseOrders.status, status) : undefined,
     search ? ilike(purchaseOrders.supplier, `%${search}%`) : undefined,
   ].filter((filter): filter is SQL => filter !== undefined)
-  const [items, lines, countResult] = await Promise.all([
+  const [items, countResult] = await Promise.all([
     db
       .select()
       .from(purchaseOrders)
       .where(filters.length ? and(...filters) : undefined)
       .limit(limit)
       .offset(offset),
-    db.select().from(purchaseOrderLines),
     db
       .select({ count: sql<string>`count(*)` })
       .from(purchaseOrders)
       .where(filters.length ? and(...filters) : undefined),
   ])
+  const lines = items.length
+    ? await db
+        .select()
+        .from(purchaseOrderLines)
+        .where(inArray(purchaseOrderLines.purchaseOrderId, items.map((item) => item.id)))
+    : []
   const total = Number(countResult[0]?.count ?? 0)
   return ok(
     c,

@@ -45,6 +45,11 @@ export async function ensureStockAvailable(lines: Array<{ productId: string | nu
 }
 
 export async function createStockOutForInvoice(invoiceId: string, userId?: string) {
+  const [invoice] = await db.select().from(invoices).where(eq(invoices.id, invoiceId))
+  if (!invoice) {
+    return
+  }
+
   await db
     .delete(stockMovements)
     .where(
@@ -64,6 +69,7 @@ export async function createStockOutForInvoice(invoiceId: string, userId?: strin
       continue
     }
     await db.insert(stockMovements).values({
+      tenantId: invoice.tenantId,
       productId: line.productId,
       warehouseId: 'WH-01',
       type: 'out',
@@ -81,6 +87,14 @@ export async function createStockInForPurchaseOrder(
   purchaseOrderId: string,
   userId?: string,
 ) {
+  const [purchaseOrder] = await db
+    .select()
+    .from(purchaseOrders)
+    .where(eq(purchaseOrders.id, purchaseOrderId))
+  if (!purchaseOrder) {
+    return
+  }
+
   await db
     .delete(stockMovements)
     .where(
@@ -100,8 +114,9 @@ export async function createStockInForPurchaseOrder(
       continue
     }
     await db.insert(stockMovements).values({
+      tenantId: purchaseOrder.tenantId,
       productId: line.productId,
-      warehouseId: 'WH-01',
+      warehouseId: purchaseOrder.warehouseId ?? 'WH-01',
       type: 'in',
       qty: String(line.receivedQty ?? line.quantity),
       unitCost: String(line.unitPrice),
@@ -135,12 +150,18 @@ export async function createInvoicePaymentTransaction(
   const [account] = await db
     .select()
     .from(financeAccounts)
-    .where(eq(financeAccounts.type, 'bank'))
+    .where(
+      and(
+        eq(financeAccounts.type, 'bank'),
+        ...(invoice.tenantId ? [eq(financeAccounts.tenantId, invoice.tenantId)] : []),
+      ),
+    )
 
   const ids = await db.select({ id: transactions.id }).from(transactions)
 
   await db.insert(transactions).values({
     id: nextTransactionId(ids.map((item) => item.id)),
+    tenantId: invoice.tenantId,
     date: invoice.dueDate,
     description: `${invoice.customer} - Fatura tahsilati`,
     category: 'Tahsilat',
