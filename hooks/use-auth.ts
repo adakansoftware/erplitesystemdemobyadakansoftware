@@ -8,6 +8,7 @@ export type DemoUser = {
   name: string
   email: string
   role: 'admin' | 'manager' | 'sales'
+  tenantId: string | null
   initials: string
 }
 
@@ -44,6 +45,7 @@ function mapUser(payload: unknown): DemoUser | null {
     name,
     email: String(raw.email),
     role,
+    tenantId: raw.tenantId ? String(raw.tenantId) : null,
     initials: toInitials(name),
   }
 }

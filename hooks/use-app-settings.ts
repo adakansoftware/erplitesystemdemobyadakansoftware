@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api/client'
+import { useAuth } from '@/hooks/use-auth'
 
 export type AppSettings = {
   companyName: string
@@ -15,7 +16,7 @@ export type AppSettings = {
   dailySummaryEmail: boolean
 }
 
-const STORAGE_KEY = 'erp-lite-app-settings-ui'
+const LEGACY_STORAGE_KEY = 'erp-lite-app-settings-ui'
 
 const defaultSettings: AppSettings = {
   companyName: 'Adakan Endustriyel Cozumler Ltd. Sti.',
@@ -32,8 +33,12 @@ const defaultSettings: AppSettings = {
 }
 
 export function useAppSettings() {
+  const { currentUser, isReady: authReady } = useAuth()
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
   const [isReady, setIsReady] = useState(false)
+  const storageKey = currentUser?.tenantId
+    ? `${LEGACY_STORAGE_KEY}:${currentUser.tenantId}`
+    : `${LEGACY_STORAGE_KEY}:guest`
 
   useEffect(() => {
     let cancelled = false
@@ -43,9 +48,15 @@ export function useAppSettings() {
 
       if (typeof window !== 'undefined') {
         try {
-          const rawValue = window.localStorage.getItem(STORAGE_KEY)
+          const rawValue = window.localStorage.getItem(storageKey)
           if (rawValue) {
             uiSettings = JSON.parse(rawValue) as Partial<AppSettings>
+          } else {
+            const legacyValue = window.localStorage.getItem(LEGACY_STORAGE_KEY)
+            if (legacyValue) {
+              uiSettings = JSON.parse(legacyValue) as Partial<AppSettings>
+              window.localStorage.setItem(storageKey, legacyValue)
+            }
           }
         } catch {
           uiSettings = {}
@@ -86,7 +97,7 @@ export function useAppSettings() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [storageKey, authReady])
 
   const updateSettings = async (nextSettings: AppSettings) => {
     setSettings(nextSettings)
@@ -98,7 +109,7 @@ export function useAppSettings() {
     }
 
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(uiSettings))
+      window.localStorage.setItem(storageKey, JSON.stringify(uiSettings))
     }
 
     await api.put('/settings', {
@@ -116,7 +127,7 @@ export function useAppSettings() {
 
   return {
     settings,
-    isReady,
+    isReady: isReady && authReady,
     updateSettings,
   }
 }
