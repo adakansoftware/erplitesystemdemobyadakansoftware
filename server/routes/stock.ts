@@ -125,7 +125,7 @@ stockRoutes.get('/summary', async (c) => {
   const summary = await cached(tenantCacheKey('stock:summary', tenantId), 60, async () => {
     const [items, categories] = await Promise.all([
       db.select().from(products).where(tenantId ? eq(products.tenantId, tenantId) : undefined),
-      db.select().from(productCategories),
+      db.select().from(productCategories).where(tenantId ? eq(productCategories.tenantId, tenantId) : undefined),
     ])
     const categoryMap = new Map(categories.map((category) => [category.id, category.name]))
 

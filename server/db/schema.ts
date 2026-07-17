@@ -8,6 +8,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core'
@@ -105,10 +106,17 @@ export const currentAccounts = pgTable('current_accounts', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
-export const productCategories = pgTable('product_categories', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  name: varchar('name', { length: 100 }).notNull().unique(),
-})
+export const productCategories = pgTable(
+  'product_categories',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id),
+    name: varchar('name', { length: 100 }).notNull(),
+  },
+  (table) => ({
+    byTenantName: uniqueIndex('product_categories_tenant_name_idx').on(table.tenantId, table.name),
+  }),
+)
 
 export const products = pgTable('products', {
   id: varchar('id', { length: 20 }).primaryKey(),

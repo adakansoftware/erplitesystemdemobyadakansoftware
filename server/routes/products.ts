@@ -34,7 +34,11 @@ const categorySchema = z.object({
 
 export const productsRoutes = new Hono()
 
-async function resolveCategoryId(input?: string | null, existingId?: string | null) {
+async function resolveCategoryId(
+  input?: string | null,
+  existingId?: string | null,
+  tenantId?: string,
+) {
   if (existingId) {
     return existingId
   }
@@ -43,12 +47,23 @@ async function resolveCategoryId(input?: string | null, existingId?: string | nu
     return undefined
   }
 
-  const [existing] = await db.select().from(productCategories).where(eq(productCategories.name, input))
+  const [existing] = await db
+    .select()
+    .from(productCategories)
+    .where(
+      and(
+        eq(productCategories.name, input),
+        ...(tenantId ? [eq(productCategories.tenantId, tenantId)] : []),
+      ),
+    )
   if (existing) {
     return existing.id
   }
 
-  const [createdCategory] = await db.insert(productCategories).values({ name: input }).returning()
+  const [createdCategory] = await db
+    .insert(productCategories)
+    .values({ tenantId, name: input })
+    .returning()
   return createdCategory.id
 }
 
@@ -91,7 +106,7 @@ productsRoutes.get('/', async (c) => {
         .select({ count: sql<string>`count(*)` })
         .from(products)
         .where(filters.length ? and(...filters) : undefined),
-      db.select().from(productCategories),
+      db.select().from(productCategories).where(tenantId ? eq(productCategories.tenantId, tenantId) : undefined),
     ])
 
     const categoryMap = new Map(categories.map((item) => [item.id, item.name]))
@@ -126,25 +141,49 @@ productsRoutes.get('/low-stock', async (c) => {
 })
 
 productsRoutes.get('/categories', async (c) => {
-  return ok(c, await db.select().from(productCategories))
+  const tenantId = c.get('tenantId')
+  return ok(
+    c,
+    await db.select().from(productCategories).where(tenantId ? eq(productCategories.tenantId, tenantId) : undefined),
+  )
 })
 
 productsRoutes.post('/categories', validate(categorySchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof categorySchema>
-  const [existing] = await db.select().from(productCategories).where(eq(productCategories.name, body.name))
+  const tenantId = c.get('tenantId')
+  const [existing] = await db
+    .select()
+    .from(productCategories)
+    .where(
+      and(
+        eq(productCategories.name, body.name),
+        ...(tenantId ? [eq(productCategories.tenantId, tenantId)] : []),
+      ),
+    )
   if (existing) {
     return ok(c, existing)
   }
 
-  const [createdCategory] = await db.insert(productCategories).values({ name: body.name }).returning()
-  await invalidate('products:list:*')
+  const [createdCategory] = await db
+    .insert(productCategories)
+    .values({ tenantId, name: body.name })
+    .returning()
+  await invalidate(tenantCachePattern('products:list', tenantId))
   return created(c, createdCategory)
 })
 
 productsRoutes.delete('/categories/:id', requireRole('admin'), async (c) => {
   const id = c.req.param('id')
-  await db.delete(productCategories).where(eq(productCategories.id, id))
-  await invalidate('products:list:*')
+  const tenantId = c.get('tenantId')
+  await db
+    .delete(productCategories)
+    .where(
+      and(
+        eq(productCategories.id, id),
+        ...(tenantId ? [eq(productCategories.tenantId, tenantId)] : []),
+      ),
+    )
+  await invalidate(tenantCachePattern('products:list', tenantId))
   return ok(c, { id })
 })
 
@@ -166,7 +205,15 @@ productsRoutes.get('/:id', async (c) => {
 
   const totalStock = await getProductStock(product.id)
   const [category] = product.categoryId
-    ? await db.select().from(productCategories).where(eq(productCategories.id, product.categoryId))
+    ? await db
+        .select()
+        .from(productCategories)
+        .where(
+          and(
+            eq(productCategories.id, product.categoryId),
+            ...(tenantId ? [eq(productCategories.tenantId, tenantId)] : []),
+          ),
+        )
     : [null]
   const warehouseItems = await db
     .select()
@@ -239,7 +286,7 @@ productsRoutes.get('/:id/stock', async (c) => {
 productsRoutes.post('/', validate(createSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof createSchema>
   const tenantId = c.get('tenantId')
-  const categoryId = await resolveCategoryId(body.category, body.categoryId)
+  const categoryId = await resolveCategoryId(body.category, body.categoryId, tenantId)
   await db.insert(products).values({
     id: body.id ?? `PRD-${Date.now()}`,
     tenantId,
@@ -275,7 +322,7 @@ productsRoutes.put('/:id', validate(updateSchema), async (c) => {
   const id = c.req.param('id')
   const body = c.get('validatedBody') as z.infer<typeof updateSchema>
   const tenantId = c.get('tenantId')
-  const categoryId = await resolveCategoryId(body.category, body.categoryId)
+  const categoryId = await resolveCategoryId(body.category, body.categoryId, tenantId)
   await db
     .update(products)
     .set({

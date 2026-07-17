@@ -74,7 +74,7 @@ async function main() {
   for (const category of mockCategories) {
     const [row] = await db
       .insert(productCategories)
-      .values({ name: category })
+      .values({ tenantId: defaultTenant.id, name: category })
       .returning()
     categoryMap.set(category, row.id)
   }

@@ -107,7 +107,9 @@ beforeEach(() => {
       }),
     }))
     .mockImplementationOnce(() => ({
-      from: async () => [{ id: 'cat-1', name: 'Elektronik' }],
+      from: () => ({
+        where: async () => [{ id: 'cat-1', name: 'Elektronik' }],
+      }),
     }))
 })
 
