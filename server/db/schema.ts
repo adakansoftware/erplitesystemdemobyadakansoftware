@@ -74,6 +74,7 @@ export const auditLogs = pgTable(
 
 export const companySettings = pgTable('company_settings', {
   id: integer('id').primaryKey().default(1),
+  tenantId: uuid('tenant_id').notNull().unique().references(() => tenants.id),
   name: varchar('name', { length: 255 }).notNull().default(''),
   taxNumber: varchar('tax_number', { length: 20 }),
   taxOffice: varchar('tax_office', { length: 100 }),

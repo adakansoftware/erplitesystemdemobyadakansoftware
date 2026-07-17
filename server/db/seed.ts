@@ -102,6 +102,7 @@ async function main() {
 
   await db.insert(companySettings).values({
     id: 1,
+    tenantId: defaultTenant.id,
     name: 'Adakan Endustriyel Cozumler Ltd. Sti.',
     taxNumber: '1234567890',
     taxOffice: 'Ikitelli',
