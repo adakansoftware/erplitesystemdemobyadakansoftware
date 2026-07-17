@@ -130,6 +130,7 @@ export const products = pgTable('products', {
 
 export const warehouses = pgTable('warehouses', {
   id: varchar('id', { length: 20 }).primaryKey(),
+  tenantId: uuid('tenant_id').references(() => tenants.id),
   name: varchar('name', { length: 255 }).notNull(),
   location: varchar('location', { length: 255 }),
   manager: varchar('manager', { length: 255 }),
@@ -142,6 +143,7 @@ export const stockMovements = pgTable(
   'stock_movements',
   {
     id: uuid('id').defaultRandom().primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id),
     productId: varchar('product_id', { length: 20 }).notNull().references(() => products.id),
     warehouseId: varchar('warehouse_id', { length: 20 }).references(() => warehouses.id),
     type: varchar('type', { length: 20 }).notNull(),
@@ -162,6 +164,7 @@ export const stockMovements = pgTable(
 
 export const leads = pgTable('leads', {
   id: varchar('id', { length: 20 }).primaryKey(),
+  tenantId: uuid('tenant_id').references(() => tenants.id),
   name: varchar('name', { length: 255 }).notNull(),
   company: varchar('company', { length: 255 }),
   source: varchar('source', { length: 100 }),
@@ -177,6 +180,7 @@ export const leads = pgTable('leads', {
 
 export const companies = pgTable('companies', {
   id: varchar('id', { length: 20 }).primaryKey(),
+  tenantId: uuid('tenant_id').references(() => tenants.id),
   name: varchar('name', { length: 255 }).notNull(),
   sector: varchar('sector', { length: 100 }),
   city: varchar('city', { length: 100 }),
@@ -192,6 +196,7 @@ export const companies = pgTable('companies', {
 
 export const contacts = pgTable('contacts', {
   id: varchar('id', { length: 20 }).primaryKey(),
+  tenantId: uuid('tenant_id').references(() => tenants.id),
   name: varchar('name', { length: 255 }).notNull(),
   title: varchar('title', { length: 100 }),
   companyId: varchar('company_id', { length: 20 }).references(() => companies.id),
@@ -204,6 +209,7 @@ export const contacts = pgTable('contacts', {
 
 export const deals = pgTable('deals', {
   id: varchar('id', { length: 20 }).primaryKey(),
+  tenantId: uuid('tenant_id').references(() => tenants.id),
   title: varchar('title', { length: 255 }).notNull(),
   currentAccountId: varchar('current_account_id', { length: 20 }).references(
     () => currentAccounts.id,
@@ -221,6 +227,7 @@ export const tasks = pgTable(
   'tasks',
   {
     id: varchar('id', { length: 20 }).primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id),
     title: varchar('title', { length: 255 }).notNull(),
     related: varchar('related', { length: 255 }),
     relatedType: varchar('related_type', { length: 30 }),
@@ -342,6 +349,7 @@ export const purchaseOrderLines = pgTable('purchase_order_lines', {
 
 export const financeAccounts = pgTable('finance_accounts', {
   id: varchar('id', { length: 20 }).primaryKey(),
+  tenantId: uuid('tenant_id').references(() => tenants.id),
   name: varchar('name', { length: 255 }).notNull(),
   type: varchar('type', { length: 20 }).notNull(),
   bankName: varchar('bank_name', { length: 100 }),
@@ -355,6 +363,7 @@ export const transactions = pgTable(
   'transactions',
   {
     id: varchar('id', { length: 20 }).primaryKey(),
+    tenantId: uuid('tenant_id').references(() => tenants.id),
     date: date('date').notNull(),
     description: varchar('description', { length: 500 }).notNull(),
     category: varchar('category', { length: 100 }),

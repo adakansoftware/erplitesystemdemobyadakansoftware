@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, inArray, sql, type SQL } from 'drizzle-orm'
+import { and, eq, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { productCategories, products, stockMovements, warehouses } from '../db/schema'
@@ -34,12 +34,8 @@ stockRoutes.get('/movements', async (c) => {
   const warehouseId = c.req.query('warehouseId')
   const type = c.req.query('type')
 
-  const tenantProducts = tenantId
-    ? await db.select({ id: products.id }).from(products).where(eq(products.tenantId, tenantId))
-    : []
-  const productIds = tenantProducts.map((item) => item.id)
   const filters: SQL[] = [
-    tenantId && productIds.length ? inArray(stockMovements.productId, productIds) : undefined,
+    tenantId ? eq(stockMovements.tenantId, tenantId) : undefined,
     productId ? eq(stockMovements.productId, productId) : undefined,
     warehouseId ? eq(stockMovements.warehouseId, warehouseId) : undefined,
     type ? eq(stockMovements.type, type) : undefined,
@@ -95,6 +91,7 @@ stockRoutes.post('/movements', validate(movementSchema), async (c) => {
   }
 
   await db.insert(stockMovements).values({
+    tenantId,
     productId: body.productId,
     warehouseId: body.warehouseId ?? 'WH-01',
     type: body.type,
@@ -146,13 +143,19 @@ stockRoutes.get('/summary', async (c) => {
 })
 
 stockRoutes.get('/warehouses', async (c) => {
-  return ok(c, await db.select().from(warehouses))
+  const tenantId = c.get('tenantId')
+  return ok(
+    c,
+    await db.select().from(warehouses).where(tenantId ? eq(warehouses.tenantId, tenantId) : undefined),
+  )
 })
 
 stockRoutes.post('/warehouses', validate(warehouseSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof warehouseSchema>
+  const tenantId = c.get('tenantId')
   await db.insert(warehouses).values({
     id: body.id ?? `WH-${Date.now()}`,
+    tenantId,
     name: body.name,
     location: body.location,
     manager: body.manager,

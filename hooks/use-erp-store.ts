@@ -1119,8 +1119,11 @@ async function deleteTaskAction(id: string) {
   await refreshStore()
 }
 
-function getStatementByAccountId(accountId: string) {
-  const accountTransactions = storeState.transactions
+function getStatementByAccountId(
+  transactions: FinanceTransaction[],
+  accountId: string,
+) {
+  const accountTransactions = transactions
     .filter((transaction) => transaction.currentAccountId === accountId)
     .sort((a, b) => a.date.localeCompare(b.date))
 
@@ -1162,25 +1165,45 @@ export function useErpCollections() {
     }
   }, [])
 
-  storeState = {
-    ...storeState,
-    products: queryProducts,
-    invoices: queryInvoices,
-    currentAccounts: queryCurrentAccounts,
-    hydrated:
-      storeState.hydrated ||
-      (!productsLoading && !invoicesLoading && !currentAccountsLoading),
-  }
+  useEffect(() => {
+    setStoreState((current) => ({
+      ...current,
+      products: queryProducts,
+      invoices: queryInvoices,
+      currentAccounts: queryCurrentAccounts,
+      hydrated:
+        current.hydrated ||
+        (!productsLoading && !invoicesLoading && !currentAccountsLoading),
+    }))
+  }, [
+    queryCurrentAccounts,
+    queryInvoices,
+    queryProducts,
+    currentAccountsLoading,
+    invoicesLoading,
+    productsLoading,
+  ])
 
-  const mergedState = {
-    ...state,
-    products: queryProducts,
-    invoices: queryInvoices,
-    currentAccounts: queryCurrentAccounts,
-    hydrated:
-      state.hydrated ||
-      (!productsLoading && !invoicesLoading && !currentAccountsLoading),
-  }
+  const mergedState = useMemo(
+    () => ({
+      ...state,
+      products: queryProducts,
+      invoices: queryInvoices,
+      currentAccounts: queryCurrentAccounts,
+      hydrated:
+        state.hydrated ||
+        (!productsLoading && !invoicesLoading && !currentAccountsLoading),
+    }),
+    [
+      state,
+      queryProducts,
+      queryInvoices,
+      queryCurrentAccounts,
+      productsLoading,
+      invoicesLoading,
+      currentAccountsLoading,
+    ],
+  )
 
   return useMemo(
     () => ({
@@ -1196,7 +1219,8 @@ export function useErpCollections() {
         mergedState.purchases.find((purchase) => purchase.id === id),
       getCurrentAccountById: (id: string) =>
         mergedState.currentAccounts.find((account) => account.id === id),
-      getStatementByAccountId,
+      getStatementByAccountId: (accountId: string) =>
+        getStatementByAccountId(mergedState.transactions, accountId),
       createProduct: async (...args: Parameters<typeof createProductAction>) => {
         const result = await createProductAction(...args)
         await queryClient.invalidateQueries({ queryKey: ['products'] })

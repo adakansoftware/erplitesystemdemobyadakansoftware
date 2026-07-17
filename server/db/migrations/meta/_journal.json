@@ -15,6 +15,13 @@
       "when": 1782150696635,
       "tag": "0001_many_sharon_ventura",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784319600000,
+      "tag": "0002_public_mongoose",
+      "breakpoints": true
     }
   ]
 }

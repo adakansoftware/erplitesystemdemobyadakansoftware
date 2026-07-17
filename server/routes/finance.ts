@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
-import { and, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
+import { and, eq, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
-import { currentAccounts, financeAccounts, transactions, users } from '../db/schema'
+import { currentAccounts, financeAccounts, transactions } from '../db/schema'
 import { audit } from '../lib/audit'
 import { cached, invalidate } from '../lib/cache'
 import { nextTransactionId } from '../lib/ids'
@@ -35,30 +35,14 @@ export const financeRoutes = new Hono()
 
 financeRoutes.get('/accounts', async (c) => {
   const tenantId = c.get('tenantId')
-  const accounts = await db.select().from(financeAccounts)
-  const [tenantAccounts, tenantUsers] = await Promise.all([
-    tenantId
-      ? db.select({ id: currentAccounts.id }).from(currentAccounts).where(eq(currentAccounts.tenantId, tenantId))
-      : Promise.resolve([]),
-    tenantId
-      ? db.select({ id: users.id }).from(users).where(eq(users.tenantId, tenantId))
-      : Promise.resolve([]),
-  ])
-  const currentAccountIds = tenantAccounts.map((item) => item.id)
-  const userIds = tenantUsers.map((item) => item.id)
+  const accounts = await db
+    .select()
+    .from(financeAccounts)
+    .where(tenantId ? eq(financeAccounts.tenantId, tenantId) : undefined)
   const txs = await db
     .select()
     .from(transactions)
-    .where(
-      tenantId
-        ? or(
-            currentAccountIds.length
-              ? inArray(transactions.currentAccountId, currentAccountIds)
-              : undefined,
-            userIds.length ? inArray(transactions.createdBy, userIds) : undefined,
-          )
-        : undefined,
-    )
+    .where(tenantId ? eq(transactions.tenantId, tenantId) : undefined)
   const result = accounts.map((account) => ({
     ...account,
     balance: txs
@@ -92,25 +76,8 @@ financeRoutes.get('/transactions', async (c) => {
   const page = Math.max(1, Number(c.req.query('page') ?? 1))
   const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
   const offset = (page - 1) * limit
-  const [tenantAccounts, tenantUsers] = await Promise.all([
-    tenantId
-      ? db.select({ id: currentAccounts.id }).from(currentAccounts).where(eq(currentAccounts.tenantId, tenantId))
-      : Promise.resolve([]),
-    tenantId
-      ? db.select({ id: users.id }).from(users).where(eq(users.tenantId, tenantId))
-      : Promise.resolve([]),
-  ])
-  const currentAccountIds = tenantAccounts.map((item) => item.id)
-  const userIds = tenantUsers.map((item) => item.id)
   const filters: SQL[] = [
-    tenantId
-      ? or(
-          currentAccountIds.length
-            ? inArray(transactions.currentAccountId, currentAccountIds)
-            : undefined,
-          userIds.length ? inArray(transactions.createdBy, userIds) : undefined,
-        )
-      : undefined,
+    tenantId ? eq(transactions.tenantId, tenantId) : undefined,
     accountId ? eq(transactions.financeAccountId, accountId) : undefined,
     type ? eq(transactions.type, type) : undefined,
   ].filter((filter): filter is SQL => filter !== undefined)
@@ -166,6 +133,7 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
     type: body.type,
     amount: String(body.amount),
     currentAccountId: body.currentAccountId,
+    tenantId,
     createdBy: (c.get('user') as { id?: string } | undefined)?.id,
   })
   await invalidate('reports:cashflow:*')
@@ -185,18 +153,12 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
 financeRoutes.delete('/transactions/:id', requireRole('admin'), async (c) => {
   const id = c.req.param('id')
   const tenantId = c.get('tenantId')
-  const tenantAccounts = tenantId
-    ? await db.select({ id: currentAccounts.id }).from(currentAccounts).where(eq(currentAccounts.tenantId, tenantId))
-    : []
-  const currentAccountIds = tenantAccounts.map((item) => item.id)
   await db
     .delete(transactions)
     .where(
       and(
         eq(transactions.id, id),
-        ...(tenantId && currentAccountIds.length
-          ? [inArray(transactions.currentAccountId, currentAccountIds)]
-          : []),
+        ...(tenantId ? [eq(transactions.tenantId, tenantId)] : []),
       ),
     )
   await invalidate('reports:cashflow:*')
@@ -207,30 +169,14 @@ financeRoutes.delete('/transactions/:id', requireRole('admin'), async (c) => {
 financeRoutes.get('/summary', async (c) => {
   const tenantId = c.get('tenantId')
   const summary = await cached(tenantId ? `finance:summary:${tenantId}` : 'finance:summary', 60, async () => {
-    const [tenantAccounts, tenantUsers] = await Promise.all([
-      tenantId
-        ? db.select({ id: currentAccounts.id }).from(currentAccounts).where(eq(currentAccounts.tenantId, tenantId))
-        : Promise.resolve([]),
-      tenantId
-        ? db.select({ id: users.id }).from(users).where(eq(users.tenantId, tenantId))
-        : Promise.resolve([]),
-    ])
-    const accounts = await db.select().from(financeAccounts)
-    const currentAccountIds = tenantAccounts.map((item) => item.id)
-    const userIds = tenantUsers.map((item) => item.id)
+    const accounts = await db
+      .select()
+      .from(financeAccounts)
+      .where(tenantId ? eq(financeAccounts.tenantId, tenantId) : undefined)
     const txs = await db
       .select()
       .from(transactions)
-      .where(
-        tenantId
-          ? or(
-              currentAccountIds.length
-                ? inArray(transactions.currentAccountId, currentAccountIds)
-                : undefined,
-              userIds.length ? inArray(transactions.createdBy, userIds) : undefined,
-            )
-          : undefined,
-      )
+      .where(tenantId ? eq(transactions.tenantId, tenantId) : undefined)
     const result = accounts.reduce(
       (acc, account) => {
         const balance = txs

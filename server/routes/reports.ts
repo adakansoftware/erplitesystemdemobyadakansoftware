@@ -1,8 +1,7 @@
 import { Hono } from 'hono'
-import { eq, inArray, or } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { db } from '../db/client'
 import {
-  currentAccounts,
   deals,
   invoiceLines,
   invoices,
@@ -10,7 +9,6 @@ import {
   products,
   stockMovements,
   transactions,
-  users,
 } from '../db/schema'
 import { cached } from '../lib/cache'
 import { ok } from '../lib/http'
@@ -25,19 +23,22 @@ reportsRoutes.get('/sales-summary', async (c) => {
     tenantId ? `reports:sales:${tenantId}:${period}` : `reports:sales:${period}`,
     300,
     async () => {
-    const [invoiceItems, lineItems] = await Promise.all([
-      db.select().from(invoices).where(tenantId ? eq(invoices.tenantId, tenantId) : undefined),
-      db.select().from(invoiceLines),
-    ])
-    const totalRevenue = lineItems.reduce((sum, line) => {
-      const base = toNumber(line.quantity) * toNumber(line.unitPrice)
-      return sum + base + base * (toNumber(line.taxRate) / 100)
-    }, 0)
-    return {
-      totalRevenue,
-      invoiceCount: invoiceItems.length,
-      avgOrderValue: invoiceItems.length ? totalRevenue / invoiceItems.length : 0,
-    }
+      const [invoiceItems, lineItems] = await Promise.all([
+        db.select().from(invoices).where(tenantId ? eq(invoices.tenantId, tenantId) : undefined),
+        db.select().from(invoiceLines),
+      ])
+      const invoiceIds = new Set(invoiceItems.map((item) => item.id))
+      const scopedLineItems = lineItems.filter((line) => invoiceIds.has(line.invoiceId))
+      const totalRevenue = scopedLineItems.reduce((sum, line) => {
+        const base = toNumber(line.quantity) * toNumber(line.unitPrice)
+        return sum + base + base * (toNumber(line.taxRate) / 100)
+      }, 0)
+
+      return {
+        totalRevenue,
+        invoiceCount: invoiceItems.length,
+        avgOrderValue: invoiceItems.length ? totalRevenue / invoiceItems.length : 0,
+      }
     },
   )
   return ok(c, data)
@@ -47,7 +48,10 @@ reportsRoutes.get('/stock-value', async (c) => {
   const tenantId = c.get('tenantId')
   const [productItems, movementItems] = await Promise.all([
     db.select().from(products).where(tenantId ? eq(products.tenantId, tenantId) : undefined),
-    db.select().from(stockMovements),
+    db
+      .select()
+      .from(stockMovements)
+      .where(tenantId ? eq(stockMovements.tenantId, tenantId) : undefined),
   ])
   const totalStockValue = productItems.reduce((sum, product) => {
     const stock = movementItems
@@ -70,49 +74,33 @@ reportsRoutes.get('/cash-flow', async (c) => {
     tenantId ? `reports:cashflow:${tenantId}:${period}` : `reports:cashflow:${period}`,
     300,
     async () => {
-    const [tenantAccounts, tenantUsers] = await Promise.all([
-      tenantId
-        ? db.select({ id: currentAccounts.id }).from(currentAccounts).where(eq(currentAccounts.tenantId, tenantId))
-        : Promise.resolve([]),
-      tenantId
-        ? db.select({ id: users.id }).from(users).where(eq(users.tenantId, tenantId))
-        : Promise.resolve([]),
-    ])
-    const currentAccountIds = tenantAccounts.map((item) => item.id)
-    const userIds = tenantUsers.map((item) => item.id)
-    const items = await db
-      .select()
-      .from(transactions)
-      .where(
-        tenantId
-          ? or(
-              currentAccountIds.length
-                ? inArray(transactions.currentAccountId, currentAccountIds)
-                : undefined,
-              userIds.length ? inArray(transactions.createdBy, userIds) : undefined,
-            )
-          : undefined,
-      )
-    const dailySeries = items.map((item) => ({
-      date: item.date,
-      income: item.type === 'income' ? toNumber(item.amount) : 0,
-      expense: item.type === 'expense' ? toNumber(item.amount) : 0,
-      net: item.type === 'income' ? toNumber(item.amount) : -toNumber(item.amount),
-    }))
-    return {
-      dailySeries,
-      totalIncome: dailySeries.reduce((sum, item) => sum + item.income, 0),
-      totalExpense: dailySeries.reduce((sum, item) => sum + item.expense, 0),
-    }
+      const items = await db
+        .select()
+        .from(transactions)
+        .where(tenantId ? eq(transactions.tenantId, tenantId) : undefined)
+
+      const dailySeries = items.map((item) => ({
+        date: item.date,
+        income: item.type === 'income' ? toNumber(item.amount) : 0,
+        expense: item.type === 'expense' ? toNumber(item.amount) : 0,
+        net: item.type === 'income' ? toNumber(item.amount) : -toNumber(item.amount),
+      }))
+
+      return {
+        dailySeries,
+        totalIncome: dailySeries.reduce((sum, item) => sum + item.income, 0),
+        totalExpense: dailySeries.reduce((sum, item) => sum + item.expense, 0),
+      }
     },
   )
   return ok(c, data)
 })
 
 reportsRoutes.get('/crm-funnel', async (c) => {
+  const tenantId = c.get('tenantId')
   const [leadItems, dealItems] = await Promise.all([
-    db.select().from(leads),
-    db.select().from(deals),
+    db.select().from(leads).where(tenantId ? eq(leads.tenantId, tenantId) : undefined),
+    db.select().from(deals).where(tenantId ? eq(deals.tenantId, tenantId) : undefined),
   ])
   const qualifiedCount = leadItems.filter((item) => item.status === 'qualified').length
   const wonDeals = dealItems.filter((item) => item.stage === 'won')

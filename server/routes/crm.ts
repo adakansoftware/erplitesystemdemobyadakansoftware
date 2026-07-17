@@ -15,11 +15,15 @@ function crudRoutes<T extends z.ZodTypeAny>(
   searchColumn?: any,
 ) {
   app.get(base, async (c) => {
+    const tenantId = c.get('tenantId')
     const search = c.req.query('search')
     const page = Math.max(1, Number(c.req.query('page') ?? 1))
     const limit = Math.min(100, Number(c.req.query('limit') ?? 50))
     const offset = (page - 1) * limit
-    const whereClause = search && searchColumn ? ilike(searchColumn, `%${search}%`) : undefined
+    const whereClause = and(
+      ...(tenantId && 'tenantId' in table ? [eq(table.tenantId, tenantId)] : []),
+      ...(search && searchColumn ? [ilike(searchColumn, `%${search}%`)] : []),
+    )
     const [items, countResult] = await Promise.all([
       db.select().from(table).where(whereClause).limit(limit).offset(offset),
       db.select({ count: sql<string>`count(*)` }).from(table).where(whereClause),
@@ -30,7 +34,11 @@ function crudRoutes<T extends z.ZodTypeAny>(
 
   app.post(base, validate(schema), async (c) => {
     const body = c.get('validatedBody') as z.infer<T>
-    await db.insert(table).values(body as Record<string, unknown>)
+    const tenantId = c.get('tenantId')
+    await db.insert(table).values({
+      ...(body as Record<string, unknown>),
+      ...('tenantId' in table ? { tenantId } : {}),
+    })
     return created(c, body)
   })
 }
@@ -103,6 +111,7 @@ crudRoutes(crmRoutes, '/tasks', tasks, taskSchema, tasks.title)
 
 crmRoutes.put('/leads/:id', validate(leadSchema.partial()), async (c) => {
   const id = c.req.param('id')
+  const tenantId = c.get('tenantId')
   const body = c.get('validatedBody') as Partial<z.infer<typeof leadSchema>>
   await db
     .update(leads)
@@ -111,36 +120,42 @@ crmRoutes.put('/leads/:id', validate(leadSchema.partial()), async (c) => {
       value: body.value != null ? String(body.value) : undefined,
       updatedAt: new Date(),
     })
-    .where(eq(leads.id, id))
+    .where(and(eq(leads.id, id), ...(tenantId ? [eq(leads.tenantId, tenantId)] : [])))
   return ok(c, { id })
 })
 
 crmRoutes.delete('/leads/:id', async (c) => {
   const id = c.req.param('id')
-  await db.delete(leads).where(eq(leads.id, id))
+  const tenantId = c.get('tenantId')
+  await db
+    .delete(leads)
+    .where(and(eq(leads.id, id), ...(tenantId ? [eq(leads.tenantId, tenantId)] : [])))
   return ok(c, { id })
 })
 
 crmRoutes.put('/companies/:id', validate(companySchema.partial()), async (c) => {
   const id = c.req.param('id')
+  const tenantId = c.get('tenantId')
   await db
     .update(companies)
     .set(c.get('validatedBody') as Partial<z.infer<typeof companySchema>>)
-    .where(eq(companies.id, id))
+    .where(and(eq(companies.id, id), ...(tenantId ? [eq(companies.tenantId, tenantId)] : [])))
   return ok(c, { id })
 })
 
 crmRoutes.put('/contacts/:id', validate(contactSchema.partial()), async (c) => {
   const id = c.req.param('id')
+  const tenantId = c.get('tenantId')
   await db
     .update(contacts)
     .set(c.get('validatedBody') as Partial<z.infer<typeof contactSchema>>)
-    .where(eq(contacts.id, id))
+    .where(and(eq(contacts.id, id), ...(tenantId ? [eq(contacts.tenantId, tenantId)] : [])))
   return ok(c, { id })
 })
 
 crmRoutes.put('/deals/:id', validate(dealSchema.partial()), async (c) => {
   const id = c.req.param('id')
+  const tenantId = c.get('tenantId')
   const body = c.get('validatedBody') as Partial<z.infer<typeof dealSchema>>
   await db
     .update(deals)
@@ -149,37 +164,49 @@ crmRoutes.put('/deals/:id', validate(dealSchema.partial()), async (c) => {
       value: body.value != null ? String(body.value) : undefined,
       updatedAt: new Date(),
     })
-    .where(eq(deals.id, id))
+    .where(and(eq(deals.id, id), ...(tenantId ? [eq(deals.tenantId, tenantId)] : [])))
   return ok(c, { id })
 })
 
 crmRoutes.put('/tasks/:id', validate(taskSchema.partial()), async (c) => {
   const id = c.req.param('id')
+  const tenantId = c.get('tenantId')
   await db
     .update(tasks)
     .set(c.get('validatedBody') as Partial<z.infer<typeof taskSchema>>)
-    .where(eq(tasks.id, id))
+    .where(and(eq(tasks.id, id), ...(tenantId ? [eq(tasks.tenantId, tenantId)] : [])))
   return ok(c, { id })
 })
 
 crmRoutes.patch('/tasks/:id/toggle', async (c) => {
   const id = c.req.param('id')
-  const [task] = await db.select().from(tasks).where(eq(tasks.id, id))
+  const tenantId = c.get('tenantId')
+  const [task] = await db
+    .select()
+    .from(tasks)
+    .where(and(eq(tasks.id, id), ...(tenantId ? [eq(tasks.tenantId, tenantId)] : [])))
   await db
     .update(tasks)
     .set({ done: !task?.done, doneAt: !task?.done ? new Date() : null, updatedAt: new Date() })
-    .where(eq(tasks.id, id))
+    .where(and(eq(tasks.id, id), ...(tenantId ? [eq(tasks.tenantId, tenantId)] : [])))
   return ok(c, { id, done: !task?.done })
 })
 
 crmRoutes.delete('/tasks/:id', requireRole('admin', 'manager'), async (c) => {
   const id = c.req.param('id')
-  await db.delete(tasks).where(eq(tasks.id, id))
+  const tenantId = c.get('tenantId')
+  await db
+    .delete(tasks)
+    .where(and(eq(tasks.id, id), ...(tenantId ? [eq(tasks.tenantId, tenantId)] : [])))
   return ok(c, { id })
 })
 
 crmRoutes.get('/pipeline', async (c) => {
-  const items = await db.select().from(deals)
+  const tenantId = c.get('tenantId')
+  const items = await db
+    .select()
+    .from(deals)
+    .where(tenantId ? eq(deals.tenantId, tenantId) : undefined)
   const grouped = items.reduce<Record<string, { count: number; totalValue: number }>>(
     (acc, item) => {
       const key = item.stage

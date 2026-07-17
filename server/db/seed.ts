@@ -149,7 +149,12 @@ async function main() {
     })),
   )
 
-  await db.insert(warehousesTable).values(warehouses)
+  await db.insert(warehousesTable).values(
+    warehouses.map((warehouse) => ({
+      ...warehouse,
+      tenantId: defaultTenant.id,
+    })),
+  )
   await db.insert(stockMovementsTable).values(
     products
       .map((product) => {
@@ -163,6 +168,7 @@ async function main() {
         const openingQty = Math.max(product.stock - netRecentMovements, 0)
 
         return {
+          tenantId: defaultTenant.id,
           productId: product.id,
           warehouseId: 'WH-01',
           type: 'adjustment',
@@ -179,6 +185,7 @@ async function main() {
   )
   await db.insert(stockMovementsTable).values(
     mockStockMovements.map((movement) => ({
+      tenantId: defaultTenant.id,
       productId: movement.productId,
       warehouseId: movement.warehouseId,
       type: movement.type,
@@ -200,27 +207,48 @@ async function main() {
   )
   await db.insert(leadsTable).values(
     leads.map((lead) => ({
+      tenantId: defaultTenant.id,
       ...lead,
       value: String(lead.value),
       createdAt: new Date(lead.createdAt),
       updatedAt: new Date(lead.createdAt),
     })),
   )
-  await db.insert(companiesTable).values(companies)
+  await db.insert(companiesTable).values(
+    companies.map((company) => ({
+      ...company,
+      tenantId: defaultTenant.id,
+    })),
+  )
   await db.insert(contactsTable).values(
     contacts.map((contact) => {
       const company = companies.find((item) => item.name === contact.company)
-      return { ...contact, companyId: company?.id }
+      return { ...contact, tenantId: defaultTenant.id, companyId: company?.id }
     }),
   )
   await db.insert(dealsTable).values(
     deals.map((deal) => {
       const account = currentAccounts.find((item) => item.name === deal.customer)
-      return { ...deal, currentAccountId: account?.id, value: String(deal.value) }
+      return {
+        ...deal,
+        tenantId: defaultTenant.id,
+        currentAccountId: account?.id,
+        value: String(deal.value),
+      }
     }),
   )
-  await db.insert(tasksTable).values(tasks)
-  await db.insert(financeAccountsTable).values(financeAccounts)
+  await db.insert(tasksTable).values(
+    tasks.map((task) => ({
+      ...task,
+      tenantId: defaultTenant.id,
+    })),
+  )
+  await db.insert(financeAccountsTable).values(
+    financeAccounts.map((account) => ({
+      ...account,
+      tenantId: defaultTenant.id,
+    })),
+  )
   await db.insert(transactionsTable).values(
     transactions.map((transaction) => {
       const account = financeAccounts.find((item) => item.name === transaction.account)
@@ -229,6 +257,7 @@ async function main() {
       )
       return {
         id: transaction.id,
+        tenantId: defaultTenant.id,
         date: transaction.date,
         description: transaction.description,
         category: transaction.category,
