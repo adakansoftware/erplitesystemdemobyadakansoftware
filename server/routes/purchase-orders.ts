@@ -149,7 +149,10 @@ purchaseOrdersRoutes.post('/', validate(purchaseSchema), async (c) => {
       return fail(c, 404, 'Product not found')
     }
   }
-  const ids = await db.select({ id: purchaseOrders.id }).from(purchaseOrders)
+  const ids = await db
+    .select({ id: purchaseOrders.id })
+    .from(purchaseOrders)
+    .where(tenantId ? eq(purchaseOrders.tenantId, tenantId) : undefined)
   const id = nextDocumentId(ids.map((item) => item.id), 'SPA')
   await db.insert(purchaseOrders).values({
     id,

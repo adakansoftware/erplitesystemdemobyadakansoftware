@@ -135,7 +135,10 @@ quotationsRoutes.post('/', validate(quotationSchema), async (c) => {
       return fail(c, 404, 'Product not found')
     }
   }
-  const ids = await db.select({ id: quotations.id }).from(quotations)
+  const ids = await db
+    .select({ id: quotations.id })
+    .from(quotations)
+    .where(tenantId ? eq(quotations.tenantId, tenantId) : undefined)
   const id = nextDocumentId(ids.map((item) => item.id), 'TKL')
   await db.insert(quotations).values({
     id,
@@ -271,7 +274,10 @@ quotationsRoutes.post('/:id/convert-to-invoice', async (c) => {
     }
   }
   const lines = await db.select().from(quotationLines).where(eq(quotationLines.quotationId, id))
-  const invoiceIds = await db.select({ id: invoices.id }).from(invoices)
+  const invoiceIds = await db
+    .select({ id: invoices.id })
+    .from(invoices)
+    .where(tenantId ? eq(invoices.tenantId, tenantId) : undefined)
   const invoiceId = nextDocumentId(invoiceIds.map((item) => item.id), 'FT')
 
   await db.insert(invoices).values({

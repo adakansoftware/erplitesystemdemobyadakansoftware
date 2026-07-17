@@ -124,7 +124,10 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
       return fail(c, 404, 'Current account not found')
     }
   }
-  const ids = await db.select({ id: transactions.id }).from(transactions)
+  const ids = await db
+    .select({ id: transactions.id })
+    .from(transactions)
+    .where(tenantId ? eq(transactions.tenantId, tenantId) : undefined)
   const id = body.id ?? nextTransactionId(ids.map((item) => item.id))
   await db.insert(transactions).values({
     id,

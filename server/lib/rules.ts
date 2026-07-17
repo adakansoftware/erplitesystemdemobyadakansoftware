@@ -157,7 +157,10 @@ export async function createInvoicePaymentTransaction(
       ),
     )
 
-  const ids = await db.select({ id: transactions.id }).from(transactions)
+  const ids = await db
+    .select({ id: transactions.id })
+    .from(transactions)
+    .where(invoice.tenantId ? eq(transactions.tenantId, invoice.tenantId) : undefined)
 
   await db.insert(transactions).values({
     id: nextTransactionId(ids.map((item) => item.id)),

@@ -159,7 +159,10 @@ invoicesRoutes.post('/', validate(invoiceSchema), async (c) => {
     return fail(c, 422, 'Insufficient stock', stockCheck)
   }
 
-  const ids = await db.select({ id: invoices.id }).from(invoices)
+  const ids = await db
+    .select({ id: invoices.id })
+    .from(invoices)
+    .where(tenantId ? eq(invoices.tenantId, tenantId) : undefined)
   const id = nextDocumentId(ids.map((item) => item.id), 'FT')
   await db.insert(invoices).values({
     id,
