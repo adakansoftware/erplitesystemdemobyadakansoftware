@@ -10,7 +10,7 @@ import {
   stockMovements,
   transactions,
 } from '../db/schema'
-import { cached } from '../lib/cache'
+import { cached, tenantCacheKey } from '../lib/cache'
 import { ok } from '../lib/http'
 import { toNumber } from '../lib/serializers'
 
@@ -20,7 +20,7 @@ reportsRoutes.get('/sales-summary', async (c) => {
   const tenantId = c.get('tenantId')
   const period = c.req.query('period') ?? 'month'
   const data = await cached(
-    tenantId ? `reports:sales:${tenantId}:${period}` : `reports:sales:${period}`,
+    tenantCacheKey('reports:sales', tenantId, period),
     300,
     async () => {
       const [invoiceItems, lineItems] = await Promise.all([
@@ -71,7 +71,7 @@ reportsRoutes.get('/cash-flow', async (c) => {
   const tenantId = c.get('tenantId')
   const period = c.req.query('period') ?? 'month'
   const data = await cached(
-    tenantId ? `reports:cashflow:${tenantId}:${period}` : `reports:cashflow:${period}`,
+    tenantCacheKey('reports:cashflow', tenantId, period),
     300,
     async () => {
       const items = await db

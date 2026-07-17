@@ -3,6 +3,18 @@ import { logger } from './logger'
 
 const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : null
 
+export function tenantCacheKey(
+  prefix: string,
+  tenantId?: string | null,
+  ...parts: Array<string | number | null | undefined>
+) {
+  return [prefix, tenantId ?? 'global', ...parts.map((part) => String(part ?? ''))].join(':')
+}
+
+export function tenantCachePattern(prefix: string, tenantId?: string | null, suffix = '*') {
+  return `${prefix}:${tenantId ?? 'global'}:${suffix}`
+}
+
 export async function cached<T>(
   key: string,
   ttlSeconds: number,

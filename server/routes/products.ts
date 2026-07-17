@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { db } from '../db/client'
 import { productCategories, products, stockMovements, warehouses } from '../db/schema'
 import { audit } from '../lib/audit'
-import { cached, invalidate } from '../lib/cache'
+import { cached, invalidate, tenantCacheKey, tenantCachePattern } from '../lib/cache'
 import { attachProductStocks, getProductStock } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
 import { requireRole } from '../middleware/auth'
@@ -70,14 +70,15 @@ productsRoutes.get('/', async (c) => {
     status ? eq(products.status, status) : undefined,
   ].filter((filter): filter is SQL => filter !== undefined)
 
-  const cacheKey = [
+  const cacheKey = tenantCacheKey(
     'products:list',
+    tenantId,
     search ?? '',
     category ?? '',
     status ?? '',
-    String(page),
-    String(limit),
-  ].join(':')
+    page,
+    limit,
+  )
   const { items, total } = await cached(cacheKey, 120, async () => {
     const [result, countResult, categories] = await Promise.all([
       db
@@ -136,14 +137,14 @@ productsRoutes.post('/categories', validate(categorySchema), async (c) => {
   }
 
   const [createdCategory] = await db.insert(productCategories).values({ name: body.name }).returning()
-  await invalidate('products:*')
+  await invalidate('products:list:*')
   return created(c, createdCategory)
 })
 
 productsRoutes.delete('/categories/:id', requireRole('admin'), async (c) => {
   const id = c.req.param('id')
   await db.delete(productCategories).where(eq(productCategories.id, id))
-  await invalidate('products:*')
+  await invalidate('products:list:*')
   return ok(c, { id })
 })
 
@@ -229,7 +230,7 @@ productsRoutes.post('/', validate(createSchema), async (c) => {
   })
 
   const [product] = await db.select().from(products).where(eq(products.sku, body.sku))
-  await invalidate('products:*')
+  await invalidate(tenantCachePattern('products:list', tenantId))
   await audit({
     userId: (c.get('user') as { id?: string } | undefined)?.id,
     action: 'create',
@@ -280,7 +281,7 @@ productsRoutes.put('/:id', validate(updateSchema), async (c) => {
         ...(tenantId ? [eq(products.tenantId, tenantId)] : []),
       ),
     )
-  await invalidate('products:*')
+  await invalidate(tenantCachePattern('products:list', tenantId))
   return ok(c, product)
 })
 
@@ -296,6 +297,6 @@ productsRoutes.delete('/:id', async (c) => {
         ...(tenantId ? [eq(products.tenantId, tenantId)] : []),
       ),
     )
-  await invalidate('products:*')
+  await invalidate(tenantCachePattern('products:list', tenantId))
   return ok(c, { id, status: 'archived' })
 })

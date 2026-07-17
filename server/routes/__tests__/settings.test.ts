@@ -43,6 +43,14 @@ vi.mock('../../lib/audit', () => ({ audit: vi.fn() }))
 vi.mock('../../lib/cache', () => ({
   cached: cachedMock,
   invalidate: vi.fn(),
+  tenantCacheKey: vi.fn(
+    (prefix: string, tenantId?: string | null, ...parts: Array<string | number | null | undefined>) =>
+      [prefix, tenantId ?? 'global', ...parts.map((part) => String(part ?? ''))].join(':'),
+  ),
+  tenantCachePattern: vi.fn(
+    (prefix: string, tenantId?: string | null, suffix = '*') =>
+      `${prefix}:${tenantId ?? 'global'}:${suffix}`,
+  ),
 }))
 vi.mock('isomorphic-dompurify', () => ({
   default: () => ({

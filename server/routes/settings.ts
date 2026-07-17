@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { db } from '../db/client'
 import { companySettings } from '../db/schema'
 import { audit } from '../lib/audit'
-import { cached, invalidate } from '../lib/cache'
+import { cached, invalidate, tenantCacheKey, tenantCachePattern } from '../lib/cache'
 import { fail, ok } from '../lib/http'
 import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
@@ -29,7 +29,7 @@ settingsRoutes.get('/', async (c) => {
   if (!tenantId) {
     return fail(c, 403, 'Tenant scope required')
   }
-  const cacheKey = tenantId ? `settings:company:${tenantId}` : 'settings:company'
+  const cacheKey = tenantCacheKey('settings:company', tenantId)
   const row = await cached(cacheKey, 3600, async () => {
     const [settings] = await db
       .select()
@@ -61,7 +61,7 @@ settingsRoutes.put('/', requireRole('admin'), validate(settingsSchema), async (c
     .select()
     .from(companySettings)
     .where(eq(companySettings.tenantId, tenantId))
-  await invalidate('settings:*')
+  await invalidate(tenantCachePattern('settings:company', tenantId))
   await audit({
     userId: (c.get('user') as { id?: string } | undefined)?.id,
     action: 'update',

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { db } from '../db/client'
 import { currentAccounts, financeAccounts, transactions } from '../db/schema'
 import { audit } from '../lib/audit'
-import { cached, invalidate } from '../lib/cache'
+import { cached, invalidate, tenantCacheKey, tenantCachePattern } from '../lib/cache'
 import { nextTransactionId } from '../lib/ids'
 import { created, fail, ok } from '../lib/http'
 import { toNumber } from '../lib/serializers'
@@ -57,15 +57,17 @@ financeRoutes.get('/accounts', async (c) => {
 
 financeRoutes.post('/accounts', validate(financeAccountSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof financeAccountSchema>
+  const tenantId = c.get('tenantId')
   await db.insert(financeAccounts).values({
     id: body.id ?? `ACC-${Date.now()}`,
+    tenantId,
     name: body.name,
     type: body.type,
     bankName: body.bankName,
     iban: body.iban,
     currency: body.currency,
   })
-  await invalidate('finance:summary')
+  await invalidate(tenantCachePattern('finance:summary', tenantId))
   return created(c, body)
 })
 
@@ -89,7 +91,7 @@ financeRoutes.get('/transactions', async (c) => {
       .where(filters.length ? and(...filters) : undefined)
       .limit(limit)
       .offset(offset),
-    db.select().from(financeAccounts),
+    db.select().from(financeAccounts).where(tenantId ? eq(financeAccounts.tenantId, tenantId) : undefined),
     db
       .select({ count: sql<string>`count(*)` })
       .from(transactions)
@@ -136,7 +138,7 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
     tenantId,
     createdBy: (c.get('user') as { id?: string } | undefined)?.id,
   })
-  await invalidate('reports:cashflow:*')
+  await invalidate(tenantCachePattern('reports:cashflow', tenantId))
   await audit({
     userId: (c.get('user') as { id?: string } | undefined)?.id,
     action: 'create',
@@ -146,7 +148,7 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
     ip: c.req.header('x-forwarded-for'),
     userAgent: c.req.header('user-agent'),
   })
-  await invalidate('finance:summary')
+  await invalidate(tenantCachePattern('finance:summary', tenantId))
   return created(c, body)
 })
 
@@ -161,14 +163,14 @@ financeRoutes.delete('/transactions/:id', requireRole('admin'), async (c) => {
         ...(tenantId ? [eq(transactions.tenantId, tenantId)] : []),
       ),
     )
-  await invalidate('reports:cashflow:*')
-  await invalidate('finance:summary')
+  await invalidate(tenantCachePattern('reports:cashflow', tenantId))
+  await invalidate(tenantCachePattern('finance:summary', tenantId))
   return ok(c, { id })
 })
 
 financeRoutes.get('/summary', async (c) => {
   const tenantId = c.get('tenantId')
-  const summary = await cached(tenantId ? `finance:summary:${tenantId}` : 'finance:summary', 60, async () => {
+  const summary = await cached(tenantCacheKey('finance:summary', tenantId), 60, async () => {
     const accounts = await db
       .select()
       .from(financeAccounts)

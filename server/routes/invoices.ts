@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { db } from '../db/client'
 import { currentAccounts, invoiceLines, invoices } from '../db/schema'
 import { audit } from '../lib/audit'
-import { invalidate } from '../lib/cache'
+import { invalidate, tenantCachePattern } from '../lib/cache'
 import { eventBus } from '../lib/event-bus'
 import { nextDocumentId } from '../lib/ids'
 import {
@@ -152,9 +152,9 @@ invoicesRoutes.post('/', validate(invoiceSchema), async (c) => {
     })),
   )
   await createStockOutForInvoice(id)
-  await invalidate('reports:sales:*')
-  await invalidate('reports:cashflow:*')
-  await invalidate('products:*')
+  await invalidate(tenantCachePattern('reports:sales', tenantId))
+  await invalidate(tenantCachePattern('reports:cashflow', tenantId))
+  await invalidate(tenantCachePattern('products:list', tenantId))
   await audit({
     userId: user?.id,
     action: 'create',
@@ -213,7 +213,7 @@ invoicesRoutes.put('/:id/status', validate(z.object({ status: z.string() })), as
       )
     }
   }
-  await invalidate('reports:cashflow:*')
+  await invalidate(tenantCachePattern('reports:cashflow', tenantId))
   return ok(c, { id, status: body.status })
 })
 
@@ -303,9 +303,9 @@ invoicesRoutes.put('/:id', validate(invoiceSchema), async (c) => {
   )
 
   await createStockOutForInvoice(id)
-  await invalidate('reports:sales:*')
-  await invalidate('reports:cashflow:*')
-  await invalidate('products:*')
+  await invalidate(tenantCachePattern('reports:sales', tenantId))
+  await invalidate(tenantCachePattern('reports:cashflow', tenantId))
+  await invalidate(tenantCachePattern('products:list', tenantId))
   return ok(c, { id })
 })
 
@@ -333,7 +333,7 @@ invoicesRoutes.delete('/:id', requireRole('admin', 'manager'), async (c) => {
         ...(tenantId ? [eq(invoices.tenantId, tenantId)] : []),
       ),
     )
-  await invalidate('reports:sales:*')
-  await invalidate('reports:cashflow:*')
+  await invalidate(tenantCachePattern('reports:sales', tenantId))
+  await invalidate(tenantCachePattern('reports:cashflow', tenantId))
   return ok(c, { id })
 })

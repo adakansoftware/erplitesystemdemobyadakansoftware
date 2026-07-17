@@ -23,7 +23,7 @@ vi.mock('../../middleware/auth', async () => {
         return fail(c, 401, 'Unauthorized')
       }
 
-      c.set('user', { id: 'usr-1', role: 'admin' })
+      c.set('user', { id: 'usr-1', role: 'admin', tenantId: 'ten-1' })
       await next()
     }),
     requireRole: (...roles: string[]) =>
@@ -42,6 +42,14 @@ vi.mock('../../lib/audit', () => ({ audit: vi.fn() }))
 vi.mock('../../lib/cache', () => ({
   cached: vi.fn(async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn()),
   invalidate: vi.fn(),
+  tenantCacheKey: vi.fn(
+    (prefix: string, tenantId?: string | null, ...parts: Array<string | number | null | undefined>) =>
+      [prefix, tenantId ?? 'global', ...parts.map((part) => String(part ?? ''))].join(':'),
+  ),
+  tenantCachePattern: vi.fn(
+    (prefix: string, tenantId?: string | null, suffix = '*') =>
+      `${prefix}:${tenantId ?? 'global'}:${suffix}`,
+  ),
 }))
 vi.mock('isomorphic-dompurify', () => ({
   default: () => ({

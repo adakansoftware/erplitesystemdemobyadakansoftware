@@ -3,7 +3,7 @@ import { and, eq, ilike, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { purchaseOrderLines, purchaseOrders } from '../db/schema'
-import { invalidate } from '../lib/cache'
+import { invalidate, tenantCachePattern } from '../lib/cache'
 import { eventBus } from '../lib/event-bus'
 import { nextDocumentId } from '../lib/ids'
 import { createStockInForPurchaseOrder } from '../lib/rules'
@@ -192,8 +192,8 @@ purchaseOrdersRoutes.post('/:id/receive', validate(z.object({
     )
 
   await createStockInForPurchaseOrder(id)
-  await invalidate('products:*')
-  await invalidate('stock:summary')
+  await invalidate(tenantCachePattern('products:list', tenantId))
+  await invalidate(tenantCachePattern('stock:summary', tenantId))
   eventBus.emit('purchase.received', {
     purchaseId: id,
     userId: (c.get('user') as { id?: string } | undefined)?.id,

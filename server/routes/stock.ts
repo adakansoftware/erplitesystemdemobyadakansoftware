@@ -3,7 +3,7 @@ import { and, eq, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
 import { productCategories, products, stockMovements, warehouses } from '../db/schema'
-import { cached, invalidate } from '../lib/cache'
+import { cached, invalidate, tenantCacheKey, tenantCachePattern } from '../lib/cache'
 import { eventBus } from '../lib/event-bus'
 import { getProductStock } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
@@ -47,7 +47,7 @@ stockRoutes.get('/movements', async (c) => {
     .where(filters.length ? and(...filters) : undefined)
   const [productItems, warehouseItems] = await Promise.all([
     db.select().from(products).where(tenantId ? eq(products.tenantId, tenantId) : undefined),
-    db.select().from(warehouses),
+    db.select().from(warehouses).where(tenantId ? eq(warehouses.tenantId, tenantId) : undefined),
   ])
   const productMap = new Map(productItems.map((product) => [product.id, product]))
   const warehouseMap = new Map(warehouseItems.map((warehouse) => [warehouse.id, warehouse.name]))
@@ -114,15 +114,15 @@ stockRoutes.post('/movements', validate(movementSchema), async (c) => {
       threshold: Number(product.reorderPoint),
     })
   }
-  await invalidate('products:*')
-  await invalidate('stock:summary')
+  await invalidate(tenantCachePattern('products:list', tenantId))
+  await invalidate(tenantCachePattern('stock:summary', tenantId))
 
   return created(c, movement)
 })
 
 stockRoutes.get('/summary', async (c) => {
   const tenantId = c.get('tenantId')
-  const summary = await cached(tenantId ? `stock:summary:${tenantId}` : 'stock:summary', 60, async () => {
+  const summary = await cached(tenantCacheKey('stock:summary', tenantId), 60, async () => {
     const [items, categories] = await Promise.all([
       db.select().from(products).where(tenantId ? eq(products.tenantId, tenantId) : undefined),
       db.select().from(productCategories),
@@ -161,6 +161,6 @@ stockRoutes.post('/warehouses', validate(warehouseSchema), async (c) => {
     manager: body.manager,
     capacity: body.capacity,
   })
-  await invalidate('stock:summary')
+  await invalidate(tenantCachePattern('stock:summary', tenantId))
   return created(c, body)
 })

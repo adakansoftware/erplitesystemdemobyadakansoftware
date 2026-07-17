@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { db } from '../db/client'
 import { currentAccounts, invoiceLines, invoices, quotationLines, quotations } from '../db/schema'
 import { audit } from '../lib/audit'
-import { invalidate } from '../lib/cache'
+import { invalidate, tenantCachePattern } from '../lib/cache'
 import { eventBus } from '../lib/event-bus'
 import { nextDocumentId } from '../lib/ids'
 import { created, fail, ok } from '../lib/http'
@@ -248,8 +248,8 @@ quotationsRoutes.post('/:id/convert-to-invoice', async (c) => {
         ...(tenantId ? [eq(quotations.tenantId, tenantId)] : []),
       ),
     )
-  await invalidate('reports:sales:*')
-  await invalidate('products:*')
+  await invalidate(tenantCachePattern('reports:sales', tenantId))
+  await invalidate(tenantCachePattern('products:list', tenantId))
   eventBus.emit('quotation.accepted', {
     quotationId: id,
     invoiceId,
