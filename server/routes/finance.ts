@@ -5,7 +5,7 @@ import { db } from '../db/client'
 import { currentAccounts, financeAccounts, transactions } from '../db/schema'
 import { audit } from '../lib/audit'
 import { cached, invalidate, tenantCacheKey, tenantCachePattern } from '../lib/cache'
-import { nextTransactionId } from '../lib/ids'
+import { insertWithGeneratedId, nextTransactionId } from '../lib/ids'
 import { created, fail, ok } from '../lib/http'
 import { toNumber } from '../lib/serializers'
 import { requireRole } from '../middleware/auth'
@@ -134,12 +134,7 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
       return fail(c, 404, 'Current account not found')
     }
   }
-  const ids = await db
-    .select({ id: transactions.id })
-    .from(transactions)
-    .where(tenantId ? eq(transactions.tenantId, tenantId) : undefined)
-  const id = body.id ?? nextTransactionId(ids.map((item) => item.id), tenantId)
-  await db.insert(transactions).values({
+  const buildValues = (id: string) => ({
     id,
     date: body.date,
     description: body.description,
@@ -151,6 +146,22 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
     tenantId,
     createdBy: (c.get('user') as { id?: string } | undefined)?.id,
   })
+  const id = body.id
+    ? await db
+        .insert(transactions)
+        .values(buildValues(body.id))
+        .then(() => body.id as string)
+    : await insertWithGeneratedId(
+        async () =>
+          (await db
+            .select({ id: transactions.id })
+            .from(transactions)
+            .where(tenantId ? eq(transactions.tenantId, tenantId) : undefined)).map(
+            (item) => item.id,
+          ),
+        (ids) => nextTransactionId(ids, tenantId),
+        (nextId) => db.insert(transactions).values(buildValues(nextId)),
+      )
   await invalidate(tenantCachePattern('reports:cashflow', tenantId))
   await audit({
     userId: (c.get('user') as { id?: string } | undefined)?.id,

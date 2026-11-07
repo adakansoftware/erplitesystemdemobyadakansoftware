@@ -29,10 +29,43 @@ export function nextDocumentId(ids: string[], prefix: string, scope?: string | n
 
   const scopeToken = normalizeScope(scope)
   return scopeToken
-    ? `${prefix}-${scopeToken}-2024-${String(nextValue).padStart(4, '0')}`
-    : `${prefix}-2024-${String(nextValue).padStart(4, '0')}`
+    ? `${prefix}-${scopeToken}-${new Date().getFullYear()}-${String(nextValue).padStart(4, '0')}`
+    : `${prefix}-${new Date().getFullYear()}-${String(nextValue).padStart(4, '0')}`
 }
 
 export function nextTransactionId(ids: string[], scope?: string | null) {
   return nextSequenceId(ids, 'TRX', scope)
+}
+
+export function isUniqueViolation(error: unknown): boolean {
+  let current: unknown = error
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    if (typeof current === 'object' && (current as { code?: string }).code === '23505') {
+      return true
+    }
+    current = (current as { cause?: unknown }).cause
+  }
+  return false
+}
+
+export async function insertWithGeneratedId<T>(
+  listIds: () => Promise<string[]>,
+  buildId: (ids: string[]) => string,
+  insert: (id: string) => Promise<T>,
+  maxAttempts = 3,
+): Promise<string> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const id = buildId(await listIds())
+    try {
+      await insert(id)
+      return id
+    } catch (error) {
+      if (!isUniqueViolation(error)) {
+        throw error
+      }
+      lastError = error
+    }
+  }
+  throw lastError
 }

@@ -5,7 +5,7 @@ import { db } from '../db/client'
 import { currentAccounts, products, purchaseOrderLines, purchaseOrders, warehouses } from '../db/schema'
 import { invalidate, tenantCachePattern } from '../lib/cache'
 import { eventBus } from '../lib/event-bus'
-import { nextDocumentId } from '../lib/ids'
+import { insertWithGeneratedId, nextDocumentId } from '../lib/ids'
 import { createStockInForPurchaseOrder } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
 import { requireRole } from '../middleware/auth'
@@ -149,22 +149,26 @@ purchaseOrdersRoutes.post('/', validate(purchaseSchema), async (c) => {
       return fail(c, 404, 'Product not found')
     }
   }
-  const ids = await db
-    .select({ id: purchaseOrders.id })
-    .from(purchaseOrders)
-    .where(tenantId ? eq(purchaseOrders.tenantId, tenantId) : undefined)
-  const id = nextDocumentId(ids.map((item) => item.id), 'SPA', tenantId)
-  await db.insert(purchaseOrders).values({
-    id,
-    tenantId,
-    currentAccountId: body.currentAccountId,
-    supplier: body.supplier,
-    orderDate: body.orderDate,
-    expectedDate: body.expectedDate,
-    status: body.status,
-    note: body.note,
-    warehouseId: body.warehouseId,
-  })
+  const id = await insertWithGeneratedId(
+    async () =>
+      (await db
+        .select({ id: purchaseOrders.id })
+        .from(purchaseOrders)
+        .where(tenantId ? eq(purchaseOrders.tenantId, tenantId) : undefined)).map((item) => item.id),
+    (ids) => nextDocumentId(ids, 'SPA', tenantId),
+    (nextId) =>
+      db.insert(purchaseOrders).values({
+        id: nextId,
+        tenantId,
+        currentAccountId: body.currentAccountId,
+        supplier: body.supplier,
+        orderDate: body.orderDate,
+        expectedDate: body.expectedDate,
+        status: body.status,
+        note: body.note,
+        warehouseId: body.warehouseId,
+      }),
+  )
   await db.insert(purchaseOrderLines).values(
     body.lines.map((line, index) => ({
       purchaseOrderId: id,

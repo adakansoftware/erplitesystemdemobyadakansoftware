@@ -6,7 +6,7 @@ import { currentAccounts, invoiceLines, invoices, products, quotations } from '.
 import { audit } from '../lib/audit'
 import { invalidate, tenantCachePattern } from '../lib/cache'
 import { eventBus } from '../lib/event-bus'
-import { nextDocumentId } from '../lib/ids'
+import { insertWithGeneratedId, nextDocumentId } from '../lib/ids'
 import {
   createInvoicePaymentTransaction,
   createStockOutForInvoice,
@@ -160,22 +160,26 @@ invoicesRoutes.post('/', validate(invoiceSchema), async (c) => {
     return fail(c, 422, 'Insufficient stock', stockCheck)
   }
 
-  const ids = await db
-    .select({ id: invoices.id })
-    .from(invoices)
-    .where(tenantId ? eq(invoices.tenantId, tenantId) : undefined)
-  const id = nextDocumentId(ids.map((item) => item.id), 'FT', tenantId)
-  await db.insert(invoices).values({
-    id,
-    tenantId,
-    currentAccountId: body.currentAccountId,
-    customer: body.customer,
-    issueDate: body.issueDate,
-    dueDate: body.dueDate,
-    status: body.status,
-    note: body.note,
-    relatedQuotationId: body.relatedQuotationId,
-  })
+  const id = await insertWithGeneratedId(
+    async () =>
+      (await db
+        .select({ id: invoices.id })
+        .from(invoices)
+        .where(tenantId ? eq(invoices.tenantId, tenantId) : undefined)).map((item) => item.id),
+    (ids) => nextDocumentId(ids, 'FT', tenantId),
+    (nextId) =>
+      db.insert(invoices).values({
+        id: nextId,
+        tenantId,
+        currentAccountId: body.currentAccountId,
+        customer: body.customer,
+        issueDate: body.issueDate,
+        dueDate: body.dueDate,
+        status: body.status,
+        note: body.note,
+        relatedQuotationId: body.relatedQuotationId,
+      }),
+  )
   await db.insert(invoiceLines).values(
     body.lines.map((line, index) => ({
       invoiceId: id,

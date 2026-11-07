@@ -11,7 +11,7 @@ import {
   stockMovements,
   transactions,
 } from '../db/schema'
-import { nextTransactionId } from './ids'
+import { insertWithGeneratedId, nextTransactionId } from './ids'
 import { toNumber } from './serializers'
 
 export async function getProductStock(productId: string, tenantId?: string) {
@@ -167,25 +167,31 @@ export async function createInvoicePaymentTransaction(
       ),
     )
 
-  const ids = await db
-    .select({ id: transactions.id })
-    .from(transactions)
-    .where(invoice.tenantId ? eq(transactions.tenantId, invoice.tenantId) : undefined)
-
-  await db.insert(transactions).values({
-    id: nextTransactionId(ids.map((item) => item.id), invoice.tenantId),
-    tenantId: invoice.tenantId,
-    date: invoice.dueDate,
-    description: `${invoice.customer} - Fatura tahsilati`,
-    category: 'Tahsilat',
-    financeAccountId: account?.id ?? 'ACC-BANK-1',
-    type: 'income',
-    amount: String(total.toFixed(2)),
-    relatedDocType: 'invoice',
-    relatedDocId: invoice.id,
-    currentAccountId: invoice.currentAccountId,
-    createdBy: userId,
-  })
+  await insertWithGeneratedId(
+    async () =>
+      (await db
+        .select({ id: transactions.id })
+        .from(transactions)
+        .where(invoice.tenantId ? eq(transactions.tenantId, invoice.tenantId) : undefined)).map(
+        (item) => item.id,
+      ),
+    (ids) => nextTransactionId(ids, invoice.tenantId),
+    (nextId) =>
+      db.insert(transactions).values({
+        id: nextId,
+        tenantId: invoice.tenantId,
+        date: invoice.dueDate,
+        description: `${invoice.customer} - Fatura tahsilati`,
+        category: 'Tahsilat',
+        financeAccountId: account?.id ?? 'ACC-BANK-1',
+        type: 'income',
+        amount: String(total.toFixed(2)),
+        relatedDocType: 'invoice',
+        relatedDocId: invoice.id,
+        currentAccountId: invoice.currentAccountId,
+        createdBy: userId,
+      }),
+  )
 
   return total
 }

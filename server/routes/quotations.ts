@@ -6,7 +6,7 @@ import { currentAccounts, invoiceLines, invoices, products, quotationLines, quot
 import { audit } from '../lib/audit'
 import { invalidate, tenantCachePattern } from '../lib/cache'
 import { eventBus } from '../lib/event-bus'
-import { nextDocumentId } from '../lib/ids'
+import { insertWithGeneratedId, nextDocumentId } from '../lib/ids'
 import { created, fail, ok } from '../lib/http'
 import { sendMail } from '../lib/mailer'
 import { validate } from '../middleware/validate'
@@ -135,21 +135,25 @@ quotationsRoutes.post('/', validate(quotationSchema), async (c) => {
       return fail(c, 404, 'Product not found')
     }
   }
-  const ids = await db
-    .select({ id: quotations.id })
-    .from(quotations)
-    .where(tenantId ? eq(quotations.tenantId, tenantId) : undefined)
-  const id = nextDocumentId(ids.map((item) => item.id), 'TKL', tenantId)
-  await db.insert(quotations).values({
-    id,
-    tenantId,
-    currentAccountId: body.currentAccountId,
-    customer: body.customer,
-    date: body.date,
-    validUntil: body.validUntil,
-    note: body.note,
-    status: body.status,
-  })
+  const id = await insertWithGeneratedId(
+    async () =>
+      (await db
+        .select({ id: quotations.id })
+        .from(quotations)
+        .where(tenantId ? eq(quotations.tenantId, tenantId) : undefined)).map((item) => item.id),
+    (ids) => nextDocumentId(ids, 'TKL', tenantId),
+    (nextId) =>
+      db.insert(quotations).values({
+        id: nextId,
+        tenantId,
+        currentAccountId: body.currentAccountId,
+        customer: body.customer,
+        date: body.date,
+        validUntil: body.validUntil,
+        note: body.note,
+        status: body.status,
+      }),
+  )
   await db.insert(quotationLines).values(
     body.lines.map((line, index) => ({
       quotationId: id,
@@ -274,23 +278,26 @@ quotationsRoutes.post('/:id/convert-to-invoice', async (c) => {
     }
   }
   const lines = await db.select().from(quotationLines).where(eq(quotationLines.quotationId, id))
-  const invoiceIds = await db
-    .select({ id: invoices.id })
-    .from(invoices)
-    .where(tenantId ? eq(invoices.tenantId, tenantId) : undefined)
-  const invoiceId = nextDocumentId(invoiceIds.map((item) => item.id), 'FT', tenantId)
-
-  await db.insert(invoices).values({
-    id: invoiceId,
-    tenantId,
-    currentAccountId: quotation.currentAccountId,
-    customer: quotation.customer,
-    issueDate: quotation.date,
-    dueDate: quotation.validUntil,
-    status: 'draft',
-    note: quotation.note,
-    relatedQuotationId: quotation.id,
-  })
+  const invoiceId = await insertWithGeneratedId(
+    async () =>
+      (await db
+        .select({ id: invoices.id })
+        .from(invoices)
+        .where(tenantId ? eq(invoices.tenantId, tenantId) : undefined)).map((item) => item.id),
+    (invoiceIds) => nextDocumentId(invoiceIds, 'FT', tenantId),
+    (nextId) =>
+      db.insert(invoices).values({
+        id: nextId,
+        tenantId,
+        currentAccountId: quotation.currentAccountId,
+        customer: quotation.customer,
+        issueDate: quotation.date,
+        dueDate: quotation.validUntil,
+        status: 'draft',
+        note: quotation.note,
+        relatedQuotationId: quotation.id,
+      }),
+  )
   await db.insert(invoiceLines).values(
     lines.map((line, index) => ({
       invoiceId,
