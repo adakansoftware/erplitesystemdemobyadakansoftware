@@ -8,10 +8,10 @@ import {
 } from '../auth'
 
 describe('auth helpers', () => {
-  it('hashes and verifies passwords', () => {
-    const hash = hashPassword('test123')
-    expect(verifyPassword('test123', hash)).toBe(true)
-    expect(verifyPassword('wrong', hash)).toBe(false)
+  it('hashes and verifies passwords', async () => {
+    const hash = await hashPassword('test123')
+    expect(await verifyPassword('test123', hash)).toBe(true)
+    expect(await verifyPassword('wrong', hash)).toBe(false)
   })
 
   it('creates and verifies access tokens', async () => {

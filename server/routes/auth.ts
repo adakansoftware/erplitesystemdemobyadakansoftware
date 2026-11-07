@@ -44,7 +44,7 @@ authRoutes.post('/login', validate(loginSchema), async (c) => {
     .from(users)
     .where(and(eq(users.email, body.email), eq(users.tenantId, tenant.id)))
 
-  if (!user || !user.active || !verifyPassword(body.password, user.passwordHash)) {
+  if (!user || !user.active || !(await verifyPassword(body.password, user.passwordHash))) {
     return fail(c, 401, 'Invalid email or password')
   }
 
@@ -194,13 +194,13 @@ authRoutes.patch('/password', authMiddleware, validate(passwordSchema), async (c
   }
 
   const [user] = await db.select().from(users).where(eq(users.id, sessionUser.id))
-  if (!user || !verifyPassword(body.currentPassword, user.passwordHash)) {
+  if (!user || !(await verifyPassword(body.currentPassword, user.passwordHash))) {
     return fail(c, 401, 'Current password is incorrect')
   }
 
   await db
     .update(users)
-    .set({ passwordHash: hashPassword(body.newPassword), updatedAt: new Date() })
+    .set({ passwordHash: await hashPassword(body.newPassword), updatedAt: new Date() })
     .where(eq(users.id, sessionUser.id))
   await db
     .update(refreshTokens)

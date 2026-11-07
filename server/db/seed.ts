@@ -84,7 +84,7 @@ async function main() {
     .values({
       tenantId: defaultTenant.id,
       email: 'admin@demo.com',
-      passwordHash: hashPassword('demo123'),
+      passwordHash: await hashPassword('demo123'),
       name: 'Mehmet Adakan',
       role: 'admin',
     })
@@ -95,7 +95,7 @@ async function main() {
     .values({
       tenantId: defaultTenant.id,
       email: 'satis@demo.com',
-      passwordHash: hashPassword('demo123'),
+      passwordHash: await hashPassword('demo123'),
       name: 'Satis Temsilcisi',
       role: 'sales',
     })

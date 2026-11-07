@@ -1,4 +1,5 @@
-import { pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto'
+import { pbkdf2, randomBytes, timingSafeEqual } from 'node:crypto'
+import { promisify } from 'node:util'
 import { SignJWT, jwtVerify } from 'jose'
 
 const encoder = new TextEncoder()
@@ -19,10 +20,6 @@ export async function signAccessToken(payload: Record<string, unknown>) {
     .sign(secret())
 }
 
-export async function signToken(payload: Record<string, unknown>) {
-  return signAccessToken(payload)
-}
-
 export async function verifyToken(token: string) {
   const result = await jwtVerify(token, secret())
   return result.payload
@@ -32,19 +29,21 @@ export function createRefreshToken() {
   return randomBytes(48).toString('hex')
 }
 
-export function hashPassword(password: string) {
+const pbkdf2Async = promisify(pbkdf2)
+
+export async function hashPassword(password: string) {
   const salt = randomBytes(16).toString('hex')
-  const hash = pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex')
-  return `${salt}:${hash}`
+  const hash = await pbkdf2Async(password, salt, 100000, 64, 'sha512')
+  return `${salt}:${hash.toString('hex')}`
 }
 
-export function verifyPassword(password: string, stored: string) {
+export async function verifyPassword(password: string, stored: string) {
   const [salt, hash] = stored.split(':')
   if (!salt || !hash) {
     return false
   }
 
-  const nextHash = pbkdf2Sync(password, salt, 100000, 64, 'sha512')
+  const nextHash = await pbkdf2Async(password, salt, 100000, 64, 'sha512')
   const storedHash = Buffer.from(hash, 'hex')
   if (storedHash.length !== nextHash.length) {
     return false

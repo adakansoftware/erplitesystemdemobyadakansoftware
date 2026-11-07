@@ -78,7 +78,7 @@ usersRoutes.post('/', validate(createUserSchema), async (c) => {
       tenantId,
       name: body.name,
       email: body.email,
-      passwordHash: hashPassword(body.password),
+      passwordHash: await hashPassword(body.password),
       role: body.role,
       active: true,
     })

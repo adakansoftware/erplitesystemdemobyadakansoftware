@@ -41,8 +41,8 @@ beforeAll(async () => {
   appModule = await import('../../app')
 })
 
-beforeEach(() => {
-  const passwordHash = hashPassword('demo123')
+beforeEach(async () => {
+  const passwordHash = await hashPassword('demo123')
 
   selectWhereMock.mockReset()
   insertValuesMock.mockReset()
