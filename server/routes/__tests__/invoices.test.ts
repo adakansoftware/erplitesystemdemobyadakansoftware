@@ -23,7 +23,7 @@ vi.mock('../../middleware/auth', async () => {
         return fail(c, 401, 'Unauthorized')
       }
 
-      c.set('user', { id: 'usr-1', role: 'admin' })
+      c.set('user', { id: 'usr-1', role: 'admin', tenantId: 'ten-1' })
       await next()
     }),
     requireRole: (...roles: string[]) =>
