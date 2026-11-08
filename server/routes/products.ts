@@ -232,6 +232,7 @@ productsRoutes.get('/:id', async (c) => {
   const userItems = await db
     .select({ id: users.id, name: users.name })
     .from(users)
+    .where(tenantId ? eq(users.tenantId, tenantId) : undefined)
   const userMap = new Map(userItems.map((user) => [user.id, user.name]))
   const movements = await db
     .select()

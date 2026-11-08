@@ -212,7 +212,7 @@ purchaseOrdersRoutes.put('/:id/status', requireRole('admin', 'manager'), validat
   return ok(c, { id, status: body.status })
 })
 
-purchaseOrdersRoutes.post('/:id/receive', validate(z.object({
+purchaseOrdersRoutes.post('/:id/receive', requireRole('admin', 'manager'), validate(z.object({
   lines: z.array(z.object({ lineId: z.string(), receivedQty: z.coerce.number() })),
 })), async (c) => {
   const id = c.req.param('id')

@@ -988,9 +988,7 @@ async function receivePurchaseOrderAction(
 }
 
 async function createCurrentAccountAction(payload: Omit<CurrentAccount, 'id'>) {
-  const id = `CARI-${Date.now()}`
-  await api.post('/current-accounts', {
-    id,
+  const account = await api.post<CurrentAccount>('/current-accounts', {
     name: payload.name,
     type: payload.type,
     taxNumber: payload.taxNumber,
@@ -999,6 +997,7 @@ async function createCurrentAccountAction(payload: Omit<CurrentAccount, 'id'>) {
     email: payload.email,
     creditLimit: payload.creditLimit,
   })
+  const id = account.id
 
   if (payload.balance !== 0) {
     const defaultAccount = storeState.financeAccounts.find((account) => account.type === 'bank')

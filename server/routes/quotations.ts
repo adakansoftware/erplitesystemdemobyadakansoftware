@@ -8,6 +8,7 @@ import { invalidate, tenantCachePattern } from '../lib/cache'
 import { eventBus } from '../lib/event-bus'
 import { insertWithGeneratedId, isUniqueViolation, nextDocumentId } from '../lib/ids'
 import { created, fail, ok } from '../lib/http'
+import { escapeHtml } from '../lib/html'
 import { sendMail } from '../lib/mailer'
 import { validate } from '../middleware/validate'
 
@@ -193,9 +194,28 @@ quotationsRoutes.put('/:id', validate(quotationSchema.partial()), async (c) => {
   if (!existingQuotation) {
     return fail(c, 404, 'Quotation not found')
   }
+  if (tenantId && body.currentAccountId) {
+    const [account] = await db
+      .select({ id: currentAccounts.id })
+      .from(currentAccounts)
+      .where(
+        and(eq(currentAccounts.id, body.currentAccountId), eq(currentAccounts.tenantId, tenantId)),
+      )
+    if (!account) {
+      return fail(c, 404, 'Current account not found')
+    }
+  }
   await db
     .update(quotations)
-    .set({ ...body, updatedAt: new Date() })
+    .set({
+      currentAccountId: body.currentAccountId,
+      customer: body.customer,
+      date: body.date,
+      validUntil: body.validUntil,
+      note: body.note,
+      status: body.status,
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(quotations.id, id),
@@ -220,7 +240,7 @@ quotationsRoutes.put('/:id', validate(quotationSchema.partial()), async (c) => {
       await sendMail(
         account.email,
         `Teklif Gonderildi - ${existingQuotation.customer}`,
-        `<p>Sayin ${existingQuotation.customer}, teklifiniz ERP Lite uzerinden gonderildi.</p><p>Belge No: ${existingQuotation.id}</p>`,
+        `<p>Sayin ${escapeHtml(existingQuotation.customer)}, teklifiniz ERP Lite uzerinden gonderildi.</p><p>Belge No: ${escapeHtml(existingQuotation.id)}</p>`,
       )
     }
   }

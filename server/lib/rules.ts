@@ -10,11 +10,28 @@ import {
   purchaseOrders,
   stockMovements,
   transactions,
+  warehouses,
 } from '../db/schema'
 import { insertWithGeneratedId, nextTransactionId } from './ids'
 import { toNumber } from './serializers'
 
 type DbExecutor = Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'>
+
+/**
+ * Resolve the tenant's default warehouse instead of falling back to a
+ * globally hardcoded id that may belong to another tenant.
+ */
+export async function resolveDefaultWarehouseId(tenantId?: string | null, exec: DbExecutor = db) {
+  if (!tenantId) {
+    return null
+  }
+  const [warehouse] = await exec
+    .select({ id: warehouses.id })
+    .from(warehouses)
+    .where(eq(warehouses.tenantId, tenantId))
+    .limit(1)
+  return warehouse?.id ?? null
+}
 
 export async function getProductStock(productId: string, tenantId?: string) {
   const [result] = await db
@@ -79,6 +96,8 @@ export async function createStockOutForInvoice(
     .from(invoiceLines)
     .where(eq(invoiceLines.invoiceId, invoiceId))
 
+  const defaultWarehouseId = await resolveDefaultWarehouseId(invoice.tenantId, exec)
+
   for (const line of lines) {
     if (!line.productId) {
       continue
@@ -86,7 +105,7 @@ export async function createStockOutForInvoice(
     await exec.insert(stockMovements).values({
       tenantId: invoice.tenantId,
       productId: line.productId,
-      warehouseId: 'WH-01',
+      warehouseId: defaultWarehouseId,
       type: 'out',
       qty: String(line.quantity),
       unitCost: String(line.unitPrice),
@@ -126,6 +145,9 @@ export async function createStockInForPurchaseOrder(
     .from(purchaseOrderLines)
     .where(eq(purchaseOrderLines.purchaseOrderId, purchaseOrderId))
 
+  const defaultWarehouseId =
+    purchaseOrder.warehouseId ?? (await resolveDefaultWarehouseId(purchaseOrder.tenantId, exec))
+
   for (const line of lines) {
     if (!line.productId) {
       continue
@@ -133,7 +155,7 @@ export async function createStockInForPurchaseOrder(
     await exec.insert(stockMovements).values({
       tenantId: purchaseOrder.tenantId,
       productId: line.productId,
-      warehouseId: purchaseOrder.warehouseId ?? 'WH-01',
+      warehouseId: defaultWarehouseId,
       type: 'in',
       qty: String(line.receivedQty ?? line.quantity),
       unitCost: String(line.unitPrice),
@@ -174,6 +196,10 @@ export async function createInvoicePaymentTransaction(
       ),
     )
 
+  if (!account) {
+    return total
+  }
+
   await insertWithGeneratedId(
     async () =>
       (await db
@@ -190,7 +216,7 @@ export async function createInvoicePaymentTransaction(
         date: invoice.dueDate,
         description: `${invoice.customer} - Fatura tahsilati`,
         category: 'Tahsilat',
-        financeAccountId: account?.id ?? 'ACC-BANK-1',
+        financeAccountId: account.id,
         type: 'income',
         amount: String(total.toFixed(2)),
         relatedDocType: 'invoice',

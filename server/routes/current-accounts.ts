@@ -4,11 +4,11 @@ import { z } from 'zod'
 import { db } from '../db/client'
 import { currentAccounts, transactions } from '../db/schema'
 import { calculateCurrentAccountBalance } from '../lib/rules'
+import { insertWithGeneratedId, nextSequenceId } from '../lib/ids'
 import { created, fail, ok } from '../lib/http'
 import { validate } from '../middleware/validate'
 
 const accountSchema = z.object({
-  id: z.string().optional(),
   name: z.string().min(2),
   type: z.enum(['customer', 'supplier']),
   taxNumber: z.string().optional().nullable(),
@@ -110,30 +110,66 @@ currentAccountsRoutes.get('/:id/statement', async (c) => {
 currentAccountsRoutes.post('/', validate(accountSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof accountSchema>
   const tenantId = c.get('tenantId')
-  await db.insert(currentAccounts).values({
-    id: body.id ?? `CARI-${Date.now()}`,
-    tenantId,
-    name: body.name,
-    type: body.type,
-    taxNumber: body.taxNumber,
-    taxOffice: body.taxOffice,
-    address: body.address,
-    city: body.city,
-    phone: body.phone,
-    email: body.email,
-    creditLimit: String(body.creditLimit),
-  })
-  return created(c, body)
+  let insertedRow: typeof currentAccounts.$inferSelect | undefined
+  await insertWithGeneratedId(
+    async () =>
+      (await db
+        .select({ id: currentAccounts.id })
+        .from(currentAccounts)
+        .where(tenantId ? eq(currentAccounts.tenantId, tenantId) : undefined)).map(
+          (item) => item.id,
+        ),
+    (ids) => nextSequenceId(ids, 'CARI', tenantId),
+    async (nextId) => {
+      const [row] = await db
+        .insert(currentAccounts)
+        .values({
+          id: nextId,
+          tenantId,
+          name: body.name,
+          type: body.type,
+          taxNumber: body.taxNumber,
+          taxOffice: body.taxOffice,
+          address: body.address,
+          city: body.city,
+          phone: body.phone,
+          email: body.email,
+          creditLimit: String(body.creditLimit),
+        })
+        .returning()
+      insertedRow = row
+    },
+  )
+  return created(c, insertedRow)
 })
 
 currentAccountsRoutes.put('/:id', validate(accountSchema.partial()), async (c) => {
   const id = c.req.param('id')
   const body = c.get('validatedBody') as Partial<z.infer<typeof accountSchema>>
   const tenantId = c.get('tenantId')
+  const [existing] = await db
+    .select({ id: currentAccounts.id })
+    .from(currentAccounts)
+    .where(
+      and(
+        eq(currentAccounts.id, id),
+        ...(tenantId ? [eq(currentAccounts.tenantId, tenantId)] : []),
+      ),
+    )
+  if (!existing) {
+    return fail(c, 404, 'Current account not found')
+  }
   await db
     .update(currentAccounts)
     .set({
-      ...body,
+      name: body.name,
+      type: body.type,
+      taxNumber: body.taxNumber,
+      taxOffice: body.taxOffice,
+      address: body.address,
+      city: body.city,
+      phone: body.phone,
+      email: body.email,
       creditLimit: body.creditLimit != null ? String(body.creditLimit) : undefined,
       updatedAt: new Date(),
     })

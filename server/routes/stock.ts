@@ -5,8 +5,10 @@ import { db } from '../db/client'
 import { productCategories, products, stockMovements, users, warehouses } from '../db/schema'
 import { cached, invalidate, tenantCacheKey, tenantCachePattern } from '../lib/cache'
 import { eventBus } from '../lib/event-bus'
-import { getProductStock } from '../lib/rules'
+import { insertWithGeneratedId, nextSequenceId } from '../lib/ids'
+import { getProductStock, resolveDefaultWarehouseId } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
+import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
 
 const movementSchema = z.object({
@@ -19,7 +21,6 @@ const movementSchema = z.object({
 })
 
 const warehouseSchema = z.object({
-  id: z.string().optional(),
   name: z.string().min(2),
   location: z.string().optional().nullable(),
   manager: z.string().optional().nullable(),
@@ -48,7 +49,10 @@ stockRoutes.get('/movements', async (c) => {
   const [productItems, warehouseItems, userItems] = await Promise.all([
     db.select().from(products).where(tenantId ? eq(products.tenantId, tenantId) : undefined),
     db.select().from(warehouses).where(tenantId ? eq(warehouses.tenantId, tenantId) : undefined),
-    db.select({ id: users.id, name: users.name }).from(users),
+    db
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .where(tenantId ? eq(users.tenantId, tenantId) : undefined),
   ])
   const productMap = new Map(productItems.map((product) => [product.id, product]))
   const warehouseMap = new Map(warehouseItems.map((warehouse) => [warehouse.id, warehouse.name]))
@@ -72,7 +76,7 @@ stockRoutes.get('/movements', async (c) => {
   )
 })
 
-stockRoutes.post('/movements', validate(movementSchema), async (c) => {
+stockRoutes.post('/movements', requireRole('admin', 'manager'), validate(movementSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof movementSchema>
   const tenantId = c.get('tenantId')
   if (tenantId) {
@@ -106,7 +110,7 @@ stockRoutes.post('/movements', validate(movementSchema), async (c) => {
   const [movement] = await db.insert(stockMovements).values({
     tenantId,
     productId: body.productId,
-    warehouseId: body.warehouseId ?? 'WH-01',
+    warehouseId: body.warehouseId ?? (await resolveDefaultWarehouseId(tenantId)),
     type: body.type,
     qty: String(body.qty),
     note: body.note,
@@ -169,14 +173,31 @@ stockRoutes.get('/warehouses', async (c) => {
 stockRoutes.post('/warehouses', validate(warehouseSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof warehouseSchema>
   const tenantId = c.get('tenantId')
-  await db.insert(warehouses).values({
-    id: body.id ?? `WH-${Date.now()}`,
-    tenantId,
-    name: body.name,
-    location: body.location,
-    manager: body.manager,
-    capacity: body.capacity,
-  })
+  let insertedRow: typeof warehouses.$inferSelect | undefined
+  await insertWithGeneratedId(
+    async () =>
+      (await db
+        .select({ id: warehouses.id })
+        .from(warehouses)
+        .where(tenantId ? eq(warehouses.tenantId, tenantId) : undefined)).map(
+          (item) => item.id,
+        ),
+    (ids) => nextSequenceId(ids, 'WH', tenantId),
+    async (nextId) => {
+      const [row] = await db
+        .insert(warehouses)
+        .values({
+          id: nextId,
+          tenantId,
+          name: body.name,
+          location: body.location,
+          manager: body.manager,
+          capacity: body.capacity,
+        })
+        .returning()
+      insertedRow = row
+    },
+  )
   await invalidate(tenantCachePattern('stock:summary', tenantId))
-  return created(c, body)
+  return created(c, insertedRow)
 })

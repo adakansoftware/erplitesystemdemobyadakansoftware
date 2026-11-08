@@ -14,6 +14,7 @@ import {
   getProductStock,
 } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
+import { escapeHtml } from '../lib/html'
 import { sendMail } from '../lib/mailer'
 import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
@@ -231,7 +232,7 @@ const invoiceStatusSchema = z.object({
   status: z.enum(['draft', 'sent', 'paid', 'overdue', 'cancelled']),
 })
 
-invoicesRoutes.put('/:id/status', validate(invoiceStatusSchema), async (c) => {
+invoicesRoutes.put('/:id/status', requireRole('admin', 'manager'), validate(invoiceStatusSchema), async (c) => {
   const id = c.req.param('id')
   const body = c.get('validatedBody') as { status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled' }
   const tenantId = c.get('tenantId')
@@ -292,7 +293,7 @@ invoicesRoutes.put('/:id/status', validate(invoiceStatusSchema), async (c) => {
       await sendMail(
         account.email,
         `Tahsilat Makbuzu - ${invoice.id}`,
-        `<p>Sayin ${invoice.customer}, ${invoice.id} numarali faturanin odemesi tahsil edildi.</p>`,
+        `<p>Sayin ${escapeHtml(invoice.customer)}, ${escapeHtml(invoice.id)} numarali faturanin odemesi tahsil edildi.</p>`,
       )
     }
   }

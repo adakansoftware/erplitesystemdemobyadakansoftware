@@ -5,14 +5,13 @@ import { db } from '../db/client'
 import { currentAccounts, financeAccounts, transactions } from '../db/schema'
 import { audit } from '../lib/audit'
 import { cached, invalidate, tenantCacheKey, tenantCachePattern } from '../lib/cache'
-import { insertWithGeneratedId, nextTransactionId } from '../lib/ids'
+import { insertWithGeneratedId, nextSequenceId, nextTransactionId } from '../lib/ids'
 import { created, fail, ok } from '../lib/http'
 import { toNumber } from '../lib/serializers'
 import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
 
 const financeAccountSchema = z.object({
-  id: z.string().optional(),
   name: z.string().min(2),
   type: z.enum(['cash', 'bank']),
   bankName: z.string().optional().nullable(),
@@ -21,7 +20,6 @@ const financeAccountSchema = z.object({
 })
 
 const transactionSchema = z.object({
-  id: z.string().optional(),
   date: z.string(),
   description: z.string().min(2),
   category: z.string().optional().nullable(),
@@ -58,17 +56,34 @@ financeRoutes.get('/accounts', async (c) => {
 financeRoutes.post('/accounts', validate(financeAccountSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof financeAccountSchema>
   const tenantId = c.get('tenantId')
-  await db.insert(financeAccounts).values({
-    id: body.id ?? `ACC-${Date.now()}`,
-    tenantId,
-    name: body.name,
-    type: body.type,
-    bankName: body.bankName,
-    iban: body.iban,
-    currency: body.currency,
-  })
+  let insertedRow: typeof financeAccounts.$inferSelect | undefined
+  await insertWithGeneratedId(
+    async () =>
+      (await db
+        .select({ id: financeAccounts.id })
+        .from(financeAccounts)
+        .where(tenantId ? eq(financeAccounts.tenantId, tenantId) : undefined)).map(
+          (item) => item.id,
+        ),
+    (ids) => nextSequenceId(ids, 'ACC', tenantId),
+    async (nextId) => {
+      const [row] = await db
+        .insert(financeAccounts)
+        .values({
+          id: nextId,
+          tenantId,
+          name: body.name,
+          type: body.type,
+          bankName: body.bankName,
+          iban: body.iban,
+          currency: body.currency,
+        })
+        .returning()
+      insertedRow = row
+    },
+  )
   await invalidate(tenantCachePattern('finance:summary', tenantId))
-  return created(c, body)
+  return created(c, insertedRow)
 })
 
 financeRoutes.get('/transactions', async (c) => {
@@ -111,7 +126,11 @@ financeRoutes.get('/transactions', async (c) => {
   )
 })
 
-financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
+financeRoutes.post(
+  '/transactions',
+  requireRole('admin', 'manager'),
+  validate(transactionSchema),
+  async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof transactionSchema>
   const tenantId = c.get('tenantId')
   if (tenantId) {
@@ -146,22 +165,21 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
     tenantId,
     createdBy: (c.get('user') as { id?: string } | undefined)?.id,
   })
-  const id = body.id
-    ? await db
-        .insert(transactions)
-        .values(buildValues(body.id))
-        .then(() => body.id as string)
-    : await insertWithGeneratedId(
-        async () =>
-          (await db
-            .select({ id: transactions.id })
-            .from(transactions)
-            .where(tenantId ? eq(transactions.tenantId, tenantId) : undefined)).map(
-            (item) => item.id,
-          ),
-        (ids) => nextTransactionId(ids, tenantId),
-        (nextId) => db.insert(transactions).values(buildValues(nextId)),
-      )
+  let insertedRow: typeof transactions.$inferSelect | undefined
+  const id = await insertWithGeneratedId(
+    async () =>
+      (await db
+        .select({ id: transactions.id })
+        .from(transactions)
+        .where(tenantId ? eq(transactions.tenantId, tenantId) : undefined)).map(
+          (item) => item.id,
+        ),
+    (ids) => nextTransactionId(ids, tenantId),
+    async (nextId) => {
+      const [row] = await db.insert(transactions).values(buildValues(nextId)).returning()
+      insertedRow = row
+    },
+  )
   await invalidate(tenantCachePattern('reports:cashflow', tenantId))
   await audit({
     userId: (c.get('user') as { id?: string } | undefined)?.id,
@@ -173,7 +191,7 @@ financeRoutes.post('/transactions', validate(transactionSchema), async (c) => {
     userAgent: c.req.header('user-agent'),
   })
   await invalidate(tenantCachePattern('finance:summary', tenantId))
-  return created(c, body)
+  return created(c, insertedRow)
 })
 
 financeRoutes.delete('/transactions/:id', requireRole('admin'), async (c) => {

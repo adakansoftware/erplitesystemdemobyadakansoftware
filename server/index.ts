@@ -8,6 +8,7 @@ import { db } from './db/client'
 import { currentAccounts, invoices, users } from './db/schema'
 import { verifyToken } from './lib/auth'
 import { eventBus } from './lib/event-bus'
+import { escapeHtml } from './lib/html'
 import { logger } from './lib/logger'
 import { sendQueuedMail } from './lib/queue'
 import { notifyUser, registerClient, unregisterClient } from './lib/ws'
@@ -50,9 +51,9 @@ eventBus.on('stock.low', async ({ productId, qty, threshold }) => {
   const admins = await db.select().from(users).where(eq(users.role, 'admin'))
   const html = `
     <p>Kritik stok bildirimi olustu.</p>
-    <p>Urun: ${productId}</p>
-    <p>Mevcut stok: ${qty}</p>
-    <p>Esik deger: ${threshold}</p>
+    <p>Urun: ${escapeHtml(productId)}</p>
+    <p>Mevcut stok: ${escapeHtml(qty)}</p>
+    <p>Esik deger: ${escapeHtml(threshold)}</p>
   `
 
   await Promise.all(
@@ -97,8 +98,8 @@ cron.schedule('0 8 * * *', async () => {
           const account = invoice.currentAccountId
             ? accountMap.get(invoice.currentAccountId)
             : null
-          return `<li>${invoice.id} - ${invoice.customer} - Vade: ${invoice.dueDate}${
-            account?.email ? ` - ${account.email}` : ''
+          return `<li>${escapeHtml(invoice.id)} - ${escapeHtml(invoice.customer)} - Vade: ${escapeHtml(invoice.dueDate)}${
+            account?.email ? ` - ${escapeHtml(account.email)}` : ''
           }</li>`
         })
         .join('')}
