@@ -7,8 +7,6 @@ const connection = process.env.REDIS_URL
   : null
 
 export const emailQueue = connection ? new Queue('emails', { connection }) : null
-export const reportQueue = connection ? new Queue('reports', { connection }) : null
-export const invoiceQueue = connection ? new Queue('invoices', { connection }) : null
 
 if (connection) {
   new Worker(

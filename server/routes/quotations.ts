@@ -6,7 +6,7 @@ import { currentAccounts, invoiceLines, invoices, products, quotationLines, quot
 import { audit } from '../lib/audit'
 import { invalidate, tenantCachePattern } from '../lib/cache'
 import { eventBus } from '../lib/event-bus'
-import { insertWithGeneratedId, nextDocumentId } from '../lib/ids'
+import { insertWithGeneratedId, isUniqueViolation, nextDocumentId } from '../lib/ids'
 import { created, fail, ok } from '../lib/http'
 import { sendMail } from '../lib/mailer'
 import { validate } from '../middleware/validate'
@@ -278,47 +278,65 @@ quotationsRoutes.post('/:id/convert-to-invoice', async (c) => {
     }
   }
   const lines = await db.select().from(quotationLines).where(eq(quotationLines.quotationId, id))
-  const invoiceId = await insertWithGeneratedId(
-    async () =>
-      (await db
-        .select({ id: invoices.id })
-        .from(invoices)
-        .where(tenantId ? eq(invoices.tenantId, tenantId) : undefined)).map((item) => item.id),
-    (invoiceIds) => nextDocumentId(invoiceIds, 'FT', tenantId),
-    (nextId) =>
-      db.insert(invoices).values({
-        id: nextId,
-        tenantId,
-        currentAccountId: quotation.currentAccountId,
-        customer: quotation.customer,
-        issueDate: quotation.date,
-        dueDate: quotation.validUntil,
-        status: 'draft',
-        note: quotation.note,
-        relatedQuotationId: quotation.id,
-      }),
-  )
-  await db.insert(invoiceLines).values(
-    lines.map((line, index) => ({
-      invoiceId,
-      productId: line.productId,
-      product: line.product,
-      quantity: String(line.quantity),
-      unitPrice: String(line.unitPrice),
-      taxRate: String(line.taxRate),
-      lineOrder: index,
-    })),
-  )
-
-  await db
-    .update(quotations)
-    .set({ status: 'accepted', convertedToInvoiceId: invoiceId, updatedAt: new Date() })
-    .where(
-      and(
-        eq(quotations.id, id),
-        ...(tenantId ? [eq(quotations.tenantId, tenantId)] : []),
-      ),
-    )
+  let invoiceId: string | undefined
+  let lastError: unknown
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      invoiceId = await db.transaction(async (tx) => {
+        const createdInvoiceId = await insertWithGeneratedId(
+          async () =>
+            (await tx
+              .select({ id: invoices.id })
+              .from(invoices)
+              .where(tenantId ? eq(invoices.tenantId, tenantId) : undefined)).map((item) => item.id),
+          (invoiceIds) => nextDocumentId(invoiceIds, 'FT', tenantId),
+          async (nextId) => {
+            await tx.insert(invoices).values({
+              id: nextId,
+              tenantId,
+              currentAccountId: quotation.currentAccountId,
+              customer: quotation.customer,
+              issueDate: quotation.date,
+              dueDate: quotation.validUntil,
+              status: 'draft',
+              note: quotation.note,
+              relatedQuotationId: quotation.id,
+            })
+          },
+        )
+        await tx.insert(invoiceLines).values(
+          lines.map((line, index) => ({
+            invoiceId: createdInvoiceId,
+            productId: line.productId,
+            product: line.product,
+            quantity: String(line.quantity),
+            unitPrice: String(line.unitPrice),
+            taxRate: String(line.taxRate),
+            lineOrder: index,
+          })),
+        )
+        await tx
+          .update(quotations)
+          .set({ status: 'accepted', convertedToInvoiceId: createdInvoiceId, updatedAt: new Date() })
+          .where(
+            and(
+              eq(quotations.id, id),
+              ...(tenantId ? [eq(quotations.tenantId, tenantId)] : []),
+            ),
+          )
+        return createdInvoiceId
+      })
+      break
+    } catch (error) {
+      if (!isUniqueViolation(error)) {
+        throw error
+      }
+      lastError = error
+    }
+  }
+  if (!invoiceId) {
+    throw lastError
+  }
   await invalidate(tenantCachePattern('reports:sales', tenantId))
   await invalidate(tenantCachePattern('products:list', tenantId))
   eventBus.emit('quotation.accepted', {

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { db } from '../db/client'
 import { companies, contacts, currentAccounts, deals, leads, tasks, users } from '../db/schema'
 import { created, fail, ok } from '../lib/http'
+import { insertWithGeneratedId, nextSequenceId } from '../lib/ids'
 import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
 
@@ -51,6 +52,7 @@ function crudRoutes<T extends z.ZodTypeAny>(
   base: string,
   table: any,
   schema: T,
+  idPrefix: string,
   searchColumn?: any,
 ) {
   app.get(base, async (c) => {
@@ -86,16 +88,37 @@ function crudRoutes<T extends z.ZodTypeAny>(
     if (base === '/tasks' && !await ensureAssignedUserBelongsToTenant(tenantId, (body as { assignedTo?: string | null }).assignedTo)) {
       return fail(c, 404, 'Assigned user not found')
     }
-    await db.insert(table).values({
-      ...(body as Record<string, unknown>),
-      ...('tenantId' in table ? { tenantId } : {}),
-    })
-    return created(c, body)
+    let insertedRow: Record<string, unknown> | undefined
+    await insertWithGeneratedId(
+      async () =>
+        (await db
+          .select({ id: table.id })
+          .from(table)
+          .where(tenantId && 'tenantId' in table ? eq(table.tenantId, tenantId) : undefined)).map(
+          (item) => item.id,
+        ),
+      (ids) => nextSequenceId(ids, idPrefix, tenantId),
+      async (nextId) => {
+        const values: Record<string, unknown> = {
+          ...(body as Record<string, unknown>),
+          id: nextId,
+          ...('tenantId' in table ? { tenantId } : {}),
+        }
+        if (values.value !== undefined) {
+          values.value = String(values.value)
+        }
+        if (base === '/tasks') {
+          values.done = (body as { done?: boolean }).done ?? false
+        }
+        const [row] = await db.insert(table).values(values).returning()
+        insertedRow = row
+      },
+    )
+    return created(c, insertedRow)
   })
 }
 
 const leadSchema = z.object({
-  id: z.string(),
   name: z.string(),
   company: z.string().optional().nullable(),
   source: z.string().optional().nullable(),
@@ -108,7 +131,6 @@ const leadSchema = z.object({
 })
 
 const companySchema = z.object({
-  id: z.string(),
   name: z.string(),
   sector: z.string().optional().nullable(),
   city: z.string().optional().nullable(),
@@ -119,7 +141,6 @@ const companySchema = z.object({
 })
 
 const contactSchema = z.object({
-  id: z.string(),
   name: z.string(),
   title: z.string().optional().nullable(),
   companyId: z.string().optional().nullable(),
@@ -129,7 +150,6 @@ const contactSchema = z.object({
 })
 
 const dealSchema = z.object({
-  id: z.string(),
   title: z.string(),
   currentAccountId: z.string().optional().nullable(),
   stage: z.string().default('lead'),
@@ -140,7 +160,6 @@ const dealSchema = z.object({
 })
 
 const taskSchema = z.object({
-  id: z.string(),
   title: z.string(),
   related: z.string().optional().nullable(),
   relatedType: z.string().optional().nullable(),
@@ -154,16 +173,23 @@ const taskSchema = z.object({
 
 export const crmRoutes = new Hono()
 
-crudRoutes(crmRoutes, '/leads', leads, leadSchema, leads.name)
-crudRoutes(crmRoutes, '/companies', companies, companySchema, companies.name)
-crudRoutes(crmRoutes, '/contacts', contacts, contactSchema, contacts.name)
-crudRoutes(crmRoutes, '/deals', deals, dealSchema, deals.title)
-crudRoutes(crmRoutes, '/tasks', tasks, taskSchema, tasks.title)
+crudRoutes(crmRoutes, '/leads', leads, leadSchema, 'LD', leads.name)
+crudRoutes(crmRoutes, '/companies', companies, companySchema, 'CO', companies.name)
+crudRoutes(crmRoutes, '/contacts', contacts, contactSchema, 'CN', contacts.name)
+crudRoutes(crmRoutes, '/deals', deals, dealSchema, 'DL', deals.title)
+crudRoutes(crmRoutes, '/tasks', tasks, taskSchema, 'TK', tasks.title)
 
 crmRoutes.put('/leads/:id', validate(leadSchema.partial()), async (c) => {
   const id = c.req.param('id')
   const tenantId = c.get('tenantId')
   const body = c.get('validatedBody') as Partial<z.infer<typeof leadSchema>>
+  const [existingLead] = await db
+    .select({ id: leads.id })
+    .from(leads)
+    .where(and(eq(leads.id, id), ...(tenantId ? [eq(leads.tenantId, tenantId)] : [])))
+  if (!existingLead) {
+    return fail(c, 404, 'Lead not found')
+  }
   await db
     .update(leads)
     .set({
@@ -178,6 +204,13 @@ crmRoutes.put('/leads/:id', validate(leadSchema.partial()), async (c) => {
 crmRoutes.delete('/leads/:id', async (c) => {
   const id = c.req.param('id')
   const tenantId = c.get('tenantId')
+  const [existingLead] = await db
+    .select({ id: leads.id })
+    .from(leads)
+    .where(and(eq(leads.id, id), ...(tenantId ? [eq(leads.tenantId, tenantId)] : [])))
+  if (!existingLead) {
+    return fail(c, 404, 'Lead not found')
+  }
   await db
     .delete(leads)
     .where(and(eq(leads.id, id), ...(tenantId ? [eq(leads.tenantId, tenantId)] : [])))
@@ -190,6 +223,13 @@ crmRoutes.put('/companies/:id', validate(companySchema.partial()), async (c) => 
   const body = c.get('validatedBody') as Partial<z.infer<typeof companySchema>>
   if (!await ensureCurrentAccountBelongsToTenant(tenantId, body.currentAccountId)) {
     return fail(c, 404, 'Current account not found')
+  }
+  const [existingCompany] = await db
+    .select({ id: companies.id })
+    .from(companies)
+    .where(and(eq(companies.id, id), ...(tenantId ? [eq(companies.tenantId, tenantId)] : [])))
+  if (!existingCompany) {
+    return fail(c, 404, 'Company not found')
   }
   await db
     .update(companies)
@@ -205,6 +245,13 @@ crmRoutes.put('/contacts/:id', validate(contactSchema.partial()), async (c) => {
   if (!await ensureCompanyBelongsToTenant(tenantId, body.companyId)) {
     return fail(c, 404, 'Company not found')
   }
+  const [existingContact] = await db
+    .select({ id: contacts.id })
+    .from(contacts)
+    .where(and(eq(contacts.id, id), ...(tenantId ? [eq(contacts.tenantId, tenantId)] : [])))
+  if (!existingContact) {
+    return fail(c, 404, 'Contact not found')
+  }
   await db
     .update(contacts)
     .set(body)
@@ -218,6 +265,13 @@ crmRoutes.put('/deals/:id', validate(dealSchema.partial()), async (c) => {
   const body = c.get('validatedBody') as Partial<z.infer<typeof dealSchema>>
   if (!await ensureCurrentAccountBelongsToTenant(tenantId, body.currentAccountId)) {
     return fail(c, 404, 'Current account not found')
+  }
+  const [existingDeal] = await db
+    .select({ id: deals.id })
+    .from(deals)
+    .where(and(eq(deals.id, id), ...(tenantId ? [eq(deals.tenantId, tenantId)] : [])))
+  if (!existingDeal) {
+    return fail(c, 404, 'Deal not found')
   }
   await db
     .update(deals)
@@ -237,6 +291,13 @@ crmRoutes.put('/tasks/:id', validate(taskSchema.partial()), async (c) => {
   if (!await ensureAssignedUserBelongsToTenant(tenantId, body.assignedTo)) {
     return fail(c, 404, 'Assigned user not found')
   }
+  const [existingTask] = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(and(eq(tasks.id, id), ...(tenantId ? [eq(tasks.tenantId, tenantId)] : [])))
+  if (!existingTask) {
+    return fail(c, 404, 'Task not found')
+  }
   await db
     .update(tasks)
     .set(body)
@@ -251,16 +312,26 @@ crmRoutes.patch('/tasks/:id/toggle', async (c) => {
     .select()
     .from(tasks)
     .where(and(eq(tasks.id, id), ...(tenantId ? [eq(tasks.tenantId, tenantId)] : [])))
+  if (!task) {
+    return fail(c, 404, 'Task not found')
+  }
   await db
     .update(tasks)
-    .set({ done: !task?.done, doneAt: !task?.done ? new Date() : null, updatedAt: new Date() })
+    .set({ done: !task.done, doneAt: !task.done ? new Date() : null, updatedAt: new Date() })
     .where(and(eq(tasks.id, id), ...(tenantId ? [eq(tasks.tenantId, tenantId)] : [])))
-  return ok(c, { id, done: !task?.done })
+  return ok(c, { id, done: !task.done })
 })
 
 crmRoutes.delete('/tasks/:id', requireRole('admin', 'manager'), async (c) => {
   const id = c.req.param('id')
   const tenantId = c.get('tenantId')
+  const [existingTask] = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(and(eq(tasks.id, id), ...(tenantId ? [eq(tasks.tenantId, tenantId)] : [])))
+  if (!existingTask) {
+    return fail(c, 404, 'Task not found')
+  }
   await db
     .delete(tasks)
     .where(and(eq(tasks.id, id), ...(tenantId ? [eq(tasks.tenantId, tenantId)] : [])))

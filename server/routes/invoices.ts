@@ -6,7 +6,7 @@ import { currentAccounts, invoiceLines, invoices, products, quotations } from '.
 import { audit } from '../lib/audit'
 import { invalidate, tenantCachePattern } from '../lib/cache'
 import { eventBus } from '../lib/event-bus'
-import { insertWithGeneratedId, nextDocumentId } from '../lib/ids'
+import { insertWithGeneratedId, isUniqueViolation, nextDocumentId } from '../lib/ids'
 import {
   createInvoicePaymentTransaction,
   createStockOutForInvoice,
@@ -160,38 +160,57 @@ invoicesRoutes.post('/', validate(invoiceSchema), async (c) => {
     return fail(c, 422, 'Insufficient stock', stockCheck)
   }
 
-  const id = await insertWithGeneratedId(
-    async () =>
-      (await db
-        .select({ id: invoices.id })
-        .from(invoices)
-        .where(tenantId ? eq(invoices.tenantId, tenantId) : undefined)).map((item) => item.id),
-    (ids) => nextDocumentId(ids, 'FT', tenantId),
-    (nextId) =>
-      db.insert(invoices).values({
-        id: nextId,
-        tenantId,
-        currentAccountId: body.currentAccountId,
-        customer: body.customer,
-        issueDate: body.issueDate,
-        dueDate: body.dueDate,
-        status: body.status,
-        note: body.note,
-        relatedQuotationId: body.relatedQuotationId,
-      }),
-  )
-  await db.insert(invoiceLines).values(
-    body.lines.map((line, index) => ({
-      invoiceId: id,
-      productId: line.productId,
-      product: line.product,
-      quantity: String(line.quantity),
-      unitPrice: String(line.unitPrice),
-      taxRate: String(line.taxRate),
-      lineOrder: index,
-    })),
-  )
-  await createStockOutForInvoice(id)
+  let id: string | undefined
+  let lastError: unknown
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      id = await db.transaction(async (tx) => {
+        const invoiceId = await insertWithGeneratedId(
+          async () =>
+            (await tx
+              .select({ id: invoices.id })
+              .from(invoices)
+              .where(tenantId ? eq(invoices.tenantId, tenantId) : undefined)).map((item) => item.id),
+          (ids) => nextDocumentId(ids, 'FT', tenantId),
+          async (nextId) => {
+            await tx.insert(invoices).values({
+              id: nextId,
+              tenantId,
+              currentAccountId: body.currentAccountId,
+              customer: body.customer,
+              issueDate: body.issueDate,
+              dueDate: body.dueDate,
+              status: body.status,
+              note: body.note,
+              relatedQuotationId: body.relatedQuotationId,
+            })
+          },
+        )
+        await tx.insert(invoiceLines).values(
+          body.lines.map((line, index) => ({
+            invoiceId,
+            productId: line.productId,
+            product: line.product,
+            quantity: String(line.quantity),
+            unitPrice: String(line.unitPrice),
+            taxRate: String(line.taxRate),
+            lineOrder: index,
+          })),
+        )
+        await createStockOutForInvoice(invoiceId, user?.id, tx)
+        return invoiceId
+      })
+      break
+    } catch (error) {
+      if (!isUniqueViolation(error)) {
+        throw error
+      }
+      lastError = error
+    }
+  }
+  if (!id) {
+    throw lastError
+  }
   await invalidate(tenantCachePattern('reports:sales', tenantId))
   await invalidate(tenantCachePattern('reports:cashflow', tenantId))
   await invalidate(tenantCachePattern('products:list', tenantId))
@@ -208,9 +227,13 @@ invoicesRoutes.post('/', validate(invoiceSchema), async (c) => {
   return created(c, { id })
 })
 
-invoicesRoutes.put('/:id/status', validate(z.object({ status: z.string() })), async (c) => {
+const invoiceStatusSchema = z.object({
+  status: z.enum(['draft', 'sent', 'paid', 'overdue', 'cancelled']),
+})
+
+invoicesRoutes.put('/:id/status', validate(invoiceStatusSchema), async (c) => {
   const id = c.req.param('id')
-  const body = c.get('validatedBody') as { status: string }
+  const body = c.get('validatedBody') as { status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled' }
   const tenantId = c.get('tenantId')
   const [existingInvoice] = await db
     .select()

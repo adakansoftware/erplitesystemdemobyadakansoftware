@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { and, eq, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
-import { productCategories, products, stockMovements, warehouses } from '../db/schema'
+import { productCategories, products, stockMovements, users, warehouses } from '../db/schema'
 import { cached, invalidate, tenantCacheKey, tenantCachePattern } from '../lib/cache'
 import { eventBus } from '../lib/event-bus'
 import { getProductStock } from '../lib/rules'
@@ -45,12 +45,14 @@ stockRoutes.get('/movements', async (c) => {
     .select()
     .from(stockMovements)
     .where(filters.length ? and(...filters) : undefined)
-  const [productItems, warehouseItems] = await Promise.all([
+  const [productItems, warehouseItems, userItems] = await Promise.all([
     db.select().from(products).where(tenantId ? eq(products.tenantId, tenantId) : undefined),
     db.select().from(warehouses).where(tenantId ? eq(warehouses.tenantId, tenantId) : undefined),
+    db.select({ id: users.id, name: users.name }).from(users),
   ])
   const productMap = new Map(productItems.map((product) => [product.id, product]))
   const warehouseMap = new Map(warehouseItems.map((warehouse) => [warehouse.id, warehouse.name]))
+  const userMap = new Map(userItems.map((user) => [user.id, user.name]))
 
   return ok(
     c,
@@ -63,7 +65,7 @@ stockRoutes.get('/movements', async (c) => {
         sku: product?.sku ?? '',
         warehouse: movement.warehouseId ? warehouseMap.get(movement.warehouseId) ?? movement.warehouseId : 'Merkez Depo',
         relatedDoc: movement.relatedDocId,
-        user: 'ERP Lite',
+        user: movement.createdBy ? userMap.get(movement.createdBy) ?? 'ERP Lite' : 'ERP Lite',
         date: movement.createdAt.toISOString().slice(0, 10),
       }
     }),

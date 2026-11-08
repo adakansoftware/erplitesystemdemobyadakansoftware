@@ -159,16 +159,6 @@ function setStoreState(nextState: StoreState | ((state: StoreState) => StoreStat
   emit(typeof nextState === 'function' ? nextState(storeState) : nextState)
 }
 
-function nextSequenceId(ids: string[], prefix: string) {
-  const nextValue =
-    ids
-      .map((id) => Number(id.replace(`${prefix}-`, '')))
-      .filter((value) => Number.isFinite(value))
-      .reduce((max, value) => Math.max(max, value), 0) + 1
-
-  return `${prefix}-${String(nextValue).padStart(3, '0')}`
-}
-
 function normalize(value: string) {
   return value
     .toLocaleLowerCase('tr-TR')
@@ -1094,9 +1084,7 @@ async function createTransactionAction(payload: {
 }
 
 async function createTaskAction(payload: Omit<Task, 'id' | 'done'> & { done?: boolean }) {
-  const id = nextSequenceId(storeState.tasks.map((task) => task.id), 'TK')
-  await api.post('/crm/tasks', {
-    id,
+  const createdTask = await api.post<unknown>('/crm/tasks', {
     title: payload.title,
     related: payload.related,
     due: payload.due,
@@ -1105,7 +1093,11 @@ async function createTaskAction(payload: Omit<Task, 'id' | 'done'> & { done?: bo
     done: payload.done ?? false,
   })
   await refreshStore()
-  return storeState.tasks.find((task) => task.id === id)!
+  const rawCreated = asRecord(createdTask)
+  return (
+    storeState.tasks.find((task) => task.id === String(rawCreated.id ?? '')) ??
+    mapTask(createdTask)
+  )
 }
 
 async function toggleTaskAction(id: string) {

@@ -2,16 +2,16 @@ import { Hono } from 'hono'
 import { and, eq, ilike, inArray, or, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db/client'
-import { productCategories, products, stockMovements, warehouses } from '../db/schema'
+import { productCategories, products, stockMovements, users, warehouses } from '../db/schema'
 import { audit } from '../lib/audit'
 import { cached, invalidate, tenantCacheKey, tenantCachePattern } from '../lib/cache'
+import { insertWithGeneratedId, nextSequenceId } from '../lib/ids'
 import { attachProductStocks, getProductStock } from '../lib/rules'
 import { created, fail, ok } from '../lib/http'
 import { requireRole } from '../middleware/auth'
 import { validate } from '../middleware/validate'
 
 const createSchema = z.object({
-  id: z.string().optional(),
   name: z.string().min(2),
   sku: z.string().min(2),
   barcode: z.string().optional().nullable(),
@@ -229,6 +229,10 @@ productsRoutes.get('/:id', async (c) => {
     .from(warehouses)
     .where(tenantId ? eq(warehouses.tenantId, tenantId) : undefined)
   const warehouseMap = new Map(warehouseItems.map((warehouse) => [warehouse.id, warehouse.name]))
+  const userItems = await db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+  const userMap = new Map(userItems.map((user) => [user.id, user.name]))
   const movements = await db
     .select()
     .from(stockMovements)
@@ -252,7 +256,7 @@ productsRoutes.get('/:id', async (c) => {
       sku: product.sku,
       warehouse: movement.warehouseId ? warehouseMap.get(movement.warehouseId) ?? movement.warehouseId : 'Merkez Depo',
       relatedDoc: movement.relatedDocId,
-      user: 'ERP Lite',
+      user: movement.createdBy ? userMap.get(movement.createdBy) ?? 'ERP Lite' : 'ERP Lite',
       date: movement.createdAt.toISOString().slice(0, 10),
     })),
   })
@@ -311,33 +315,48 @@ productsRoutes.post('/', validate(createSchema), async (c) => {
   if (existingSku) {
     return fail(c, 409, 'Product SKU already exists')
   }
-  const [product] = await db.insert(products).values({
-    id: body.id ?? `PRD-${Date.now()}`,
-    tenantId,
-    name: body.name,
-    sku: body.sku,
-    barcode: body.barcode,
-    categoryId,
-    brand: body.brand,
-    unit: body.unit,
-    costPrice: String(body.costPrice),
-    salePrice: String(body.salePrice),
-    taxRate: String(body.taxRate),
-    reorderPoint: body.reorderPoint,
-    status: body.status,
-    description: body.description,
-  }).returning()
+  let productRow: typeof products.$inferSelect | undefined
+  await insertWithGeneratedId(
+    async () =>
+      (await db
+        .select({ id: products.id })
+        .from(products)
+        .where(tenantId ? eq(products.tenantId, tenantId) : undefined)).map((item) => item.id),
+    (ids) => nextSequenceId(ids, 'PRD', tenantId),
+    async (nextId) => {
+      const [row] = await db
+        .insert(products)
+        .values({
+          id: nextId,
+          tenantId,
+          name: body.name,
+          sku: body.sku,
+          barcode: body.barcode,
+          categoryId,
+          brand: body.brand,
+          unit: body.unit,
+          costPrice: String(body.costPrice),
+          salePrice: String(body.salePrice),
+          taxRate: String(body.taxRate),
+          reorderPoint: body.reorderPoint,
+          status: body.status,
+          description: body.description,
+        })
+        .returning()
+      productRow = row
+    },
+  )
   await invalidate(tenantCachePattern('products:list', tenantId))
   await audit({
     userId: (c.get('user') as { id?: string } | undefined)?.id,
     action: 'create',
     entity: 'product',
-    entityId: product?.id,
-    newValues: product,
+    entityId: productRow?.id,
+    newValues: productRow,
     ip: c.req.header('x-forwarded-for'),
     userAgent: c.req.header('user-agent'),
   })
-  return created(c, product)
+  return created(c, productRow)
 })
 
 productsRoutes.put('/:id', validate(updateSchema), async (c) => {
@@ -361,6 +380,18 @@ productsRoutes.put('/:id', validate(updateSchema), async (c) => {
     if (existingSku && existingSku.id !== id) {
       return fail(c, 409, 'Product SKU already exists')
     }
+  }
+  const [existingProduct] = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(
+      and(
+        eq(products.id, id),
+        ...(tenantId ? [eq(products.tenantId, tenantId)] : []),
+      ),
+    )
+  if (!existingProduct) {
+    return fail(c, 404, 'Product not found')
   }
   await db
     .update(products)
@@ -402,6 +433,18 @@ productsRoutes.put('/:id', validate(updateSchema), async (c) => {
 productsRoutes.delete('/:id', async (c) => {
   const id = c.req.param('id')
   const tenantId = c.get('tenantId')
+  const [existingProduct] = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(
+      and(
+        eq(products.id, id),
+        ...(tenantId ? [eq(products.tenantId, tenantId)] : []),
+      ),
+    )
+  if (!existingProduct) {
+    return fail(c, 404, 'Product not found')
+  }
   await db
     .update(products)
     .set({ status: 'archived', updatedAt: new Date() })

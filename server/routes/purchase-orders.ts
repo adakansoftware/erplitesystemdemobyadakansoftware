@@ -240,29 +240,32 @@ purchaseOrdersRoutes.post('/:id/receive', validate(z.object({
     return fail(c, 404, 'Purchase order line not found')
   }
 
-  for (const line of body.lines) {
-    await db
-      .update(purchaseOrderLines)
-      .set({ receivedQty: String(line.receivedQty) })
-      .where(eq(purchaseOrderLines.id, line.lineId))
-  }
-
   const fullyReceived = existingLines.every((line) => {
     const payload = body.lines.find((item) => item.lineId === line.id)
     return payload && payload.receivedQty >= Number(line.quantity)
   })
 
-  await db
-    .update(purchaseOrders)
-    .set({ status: fullyReceived ? 'received' : 'partial', updatedAt: new Date() })
-    .where(
-      and(
-        eq(purchaseOrders.id, id),
-        ...(tenantId ? [eq(purchaseOrders.tenantId, tenantId)] : []),
-      ),
-    )
+  const userId = (c.get('user') as { id?: string } | undefined)?.id
+  await db.transaction(async (tx) => {
+    for (const line of body.lines) {
+      await tx
+        .update(purchaseOrderLines)
+        .set({ receivedQty: String(line.receivedQty) })
+        .where(eq(purchaseOrderLines.id, line.lineId))
+    }
 
-  await createStockInForPurchaseOrder(id)
+    await tx
+      .update(purchaseOrders)
+      .set({ status: fullyReceived ? 'received' : 'partial', updatedAt: new Date() })
+      .where(
+        and(
+          eq(purchaseOrders.id, id),
+          ...(tenantId ? [eq(purchaseOrders.tenantId, tenantId)] : []),
+        ),
+      )
+
+    await createStockInForPurchaseOrder(id, userId, tx)
+  })
   await invalidate(tenantCachePattern('products:list', tenantId))
   await invalidate(tenantCachePattern('stock:summary', tenantId))
   eventBus.emit('purchase.received', {

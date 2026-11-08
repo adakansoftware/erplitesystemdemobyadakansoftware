@@ -2,15 +2,19 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { testClient } from 'hono/testing'
 
 const selectMock = vi.hoisted(() => vi.fn())
+const insertMock = vi.hoisted(() => vi.fn())
+const transactionMock = vi.hoisted(() => vi.fn())
+const ensureStockAvailableMock = vi.hoisted(() => vi.fn())
 
-vi.mock('../../db/client', () => ({
-  db: {
-    select: selectMock,
-    insert: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-  },
-}))
+const dbMock = {
+  select: selectMock,
+  insert: insertMock,
+  update: vi.fn(),
+  delete: vi.fn(),
+  transaction: transactionMock,
+}
+
+vi.mock('../../db/client', () => ({ db: dbMock }))
 
 vi.mock('../../middleware/auth', async () => {
   const { createMiddleware } = await import('hono/factory')
@@ -42,6 +46,18 @@ vi.mock('../../lib/audit', () => ({ audit: vi.fn() }))
 vi.mock('../../lib/cache', () => ({
   cached: vi.fn(async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn()),
   invalidate: vi.fn(),
+  tenantCachePattern: vi.fn(
+    (prefix: string, tenantId?: string | null, suffix = '*') =>
+      `${prefix}:${tenantId ?? 'global'}:${suffix}`,
+  ),
+}))
+vi.mock('../../lib/event-bus', () => ({ eventBus: { emit: vi.fn() } }))
+vi.mock('../../lib/rules', () => ({
+  ensureStockAvailable: ensureStockAvailableMock,
+  createStockOutForInvoice: vi.fn(),
+  createInvoicePaymentTransaction: vi.fn(async () => 0),
+  getProductStock: vi.fn(async () => 0),
+  attachProductStocks: vi.fn(async (items: Array<Record<string, unknown>>) => items),
 }))
 vi.mock('isomorphic-dompurify', () => ({
   default: () => ({
@@ -59,6 +75,13 @@ beforeAll(async () => {
 
 beforeEach(() => {
   selectMock.mockReset()
+  insertMock.mockReset()
+  transactionMock.mockReset()
+  ensureStockAvailableMock.mockReset()
+  insertMock.mockImplementation(() => ({ values: async () => undefined }))
+  transactionMock.mockImplementation(async (fn: (tx: typeof dbMock) => Promise<unknown>) =>
+    fn(dbMock),
+  )
   selectMock
     .mockImplementationOnce(() => ({
       from: () => ({
@@ -122,5 +145,88 @@ describe('GET /api/invoices', () => {
     const body = await response.json()
     expect(body.data).toHaveLength(1)
     expect(body.data[0]?.id).toBe('FT-001')
+  })
+})
+
+describe('POST /api/invoices', () => {
+  it('returns 422 when stock is insufficient', async () => {
+    ensureStockAvailableMock.mockResolvedValue({
+      ok: false,
+      productId: 'PRD-001',
+      available: 0,
+    })
+    const client = testClient(appModule.app) as any
+    const response = await client.api.invoices.$post(
+      {
+        json: {
+          customer: 'Demo Musteri',
+          issueDate: '2026-11-08',
+          dueDate: '2026-11-15',
+          lines: [{ product: 'Demo Urun', quantity: 2, unitPrice: 100 }],
+        },
+      },
+      {
+        headers: {
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+        },
+      },
+    )
+
+    expect(response.status).toBe(422)
+    expect(transactionMock).not.toHaveBeenCalled()
+  })
+
+  it('creates an invoice inside a transaction', async () => {
+    ensureStockAvailableMock.mockResolvedValue({ ok: true })
+    selectMock.mockReset()
+    selectMock.mockImplementation(() => ({
+      from: () => ({
+        where: async () => [],
+      }),
+    }))
+    const client = testClient(appModule.app) as any
+    const response = await client.api.invoices.$post(
+      {
+        json: {
+          customer: 'Demo Musteri',
+          issueDate: '2026-11-08',
+          dueDate: '2026-11-15',
+          lines: [{ product: 'Demo Urun', quantity: 2, unitPrice: 100 }],
+        },
+      },
+      {
+        headers: {
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+        },
+      },
+    )
+
+    expect(response.status).toBe(201)
+    const body = await response.json()
+    expect(body.data?.id).toMatch(/^FT-/)
+    expect(transactionMock).toHaveBeenCalledTimes(1)
+    expect(insertMock).toHaveBeenCalled()
+  })
+})
+
+describe('PUT /api/invoices/:id/status', () => {
+  it('returns 400 for an invalid status', async () => {
+    const client = testClient(appModule.app) as any
+    const response = await client.api.invoices[':id'].status.$put(
+      {
+        param: { id: 'FT-001' },
+        json: { status: 'nonsense' },
+      },
+      {
+        headers: {
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+        },
+      },
+    )
+
+    expect(response.status).toBe(400)
   })
 })

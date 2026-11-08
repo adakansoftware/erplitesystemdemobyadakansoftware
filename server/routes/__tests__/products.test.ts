@@ -2,13 +2,15 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { testClient } from 'hono/testing'
 
 const selectMock = vi.hoisted(() => vi.fn())
+const insertMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../../db/client', () => ({
   db: {
     select: selectMock,
-    insert: vi.fn(),
+    insert: insertMock,
     update: vi.fn(),
     delete: vi.fn(),
+    transaction: vi.fn(),
   },
 }))
 
@@ -73,6 +75,12 @@ beforeAll(async () => {
 
 beforeEach(() => {
   selectMock.mockReset()
+  insertMock.mockReset()
+  insertMock.mockImplementation(() => ({
+    values: () => ({
+      returning: async () => [],
+    }),
+  }))
   selectMock
     .mockImplementationOnce(() => ({
       from: () => ({
@@ -134,5 +142,113 @@ describe('GET /api/products', () => {
     const body = await response.json()
     expect(body.data).toHaveLength(1)
     expect(body.data[0]?.stock).toBe(8)
+  })
+})
+
+describe('POST /api/products', () => {
+  it('generates a sequential id on the server', async () => {
+    selectMock.mockReset()
+    selectMock
+      .mockImplementationOnce(() => ({
+        from: () => ({
+          where: async () => [],
+        }),
+      }))
+      .mockImplementationOnce(() => ({
+        from: () => ({
+          where: async () => [],
+        }),
+      }))
+    insertMock.mockImplementation(() => ({
+      values: () => ({
+        returning: async () => [
+          {
+            id: 'PRD-TEN1-001',
+            tenantId: 'ten-1',
+            name: 'Yeni Urun',
+            sku: 'SKU-NEW',
+          },
+        ],
+      }),
+    }))
+
+    const client = testClient(appModule.app) as any
+    const response = await client.api.products.$post(
+      {
+        json: {
+          name: 'Yeni Urun',
+          sku: 'SKU-NEW',
+          costPrice: 10,
+          salePrice: 20,
+          taxRate: 20,
+          reorderPoint: 0,
+        },
+      },
+      {
+        headers: {
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+        },
+      },
+    )
+
+    expect(response.status).toBe(201)
+    const body = await response.json()
+    expect(body.data?.id).toBe('PRD-TEN1-001')
+    expect(body.data?.id).not.toMatch(/^PRD-\d{13}$/)
+  })
+})
+
+describe('PUT /api/products/:id', () => {
+  it('returns 404 for a missing product', async () => {
+    selectMock.mockReset()
+    selectMock
+      .mockImplementationOnce(() => ({
+        from: () => ({
+          where: async () => [],
+        }),
+      }))
+      .mockImplementationOnce(() => ({
+        from: () => ({
+          where: async () => [],
+        }),
+      }))
+
+    const client = testClient(appModule.app) as any
+    const response = await client.api.products[':id'].$put(
+      {
+        param: { id: 'PRD-404' },
+        json: { name: 'Yok' },
+      },
+      {
+        headers: {
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+        },
+      },
+    )
+
+    expect(response.status).toBe(404)
+  })
+})
+
+describe('DELETE /api/products/:id', () => {
+  it('returns 404 for a missing product', async () => {
+    selectMock.mockReset()
+    selectMock.mockImplementation(() => ({
+      from: () => ({
+        where: async () => [],
+      }),
+    }))
+
+    const client = testClient(appModule.app) as any
+    const response = await client.api.products[':id'].$delete(
+      { param: { id: 'PRD-404' } },
+      {
+        headers: { Authorization: 'Bearer test-token' },
+      },
+    )
+
+    expect(response.status).toBe(404)
   })
 })

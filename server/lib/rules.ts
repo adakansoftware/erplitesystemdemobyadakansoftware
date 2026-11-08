@@ -14,6 +14,8 @@ import {
 import { insertWithGeneratedId, nextTransactionId } from './ids'
 import { toNumber } from './serializers'
 
+type DbExecutor = Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'>
+
 export async function getProductStock(productId: string, tenantId?: string) {
   const [result] = await db
     .select({
@@ -52,13 +54,17 @@ export async function ensureStockAvailable(
   return { ok: true as const }
 }
 
-export async function createStockOutForInvoice(invoiceId: string, userId?: string) {
-  const [invoice] = await db.select().from(invoices).where(eq(invoices.id, invoiceId))
+export async function createStockOutForInvoice(
+  invoiceId: string,
+  userId?: string,
+  exec: DbExecutor = db,
+) {
+  const [invoice] = await exec.select().from(invoices).where(eq(invoices.id, invoiceId))
   if (!invoice) {
     return
   }
 
-  await db
+  await exec
     .delete(stockMovements)
     .where(
       and(
@@ -68,7 +74,7 @@ export async function createStockOutForInvoice(invoiceId: string, userId?: strin
       ),
     )
 
-  const lines = await db
+  const lines = await exec
     .select()
     .from(invoiceLines)
     .where(eq(invoiceLines.invoiceId, invoiceId))
@@ -77,7 +83,7 @@ export async function createStockOutForInvoice(invoiceId: string, userId?: strin
     if (!line.productId) {
       continue
     }
-    await db.insert(stockMovements).values({
+    await exec.insert(stockMovements).values({
       tenantId: invoice.tenantId,
       productId: line.productId,
       warehouseId: 'WH-01',
@@ -95,8 +101,9 @@ export async function createStockOutForInvoice(invoiceId: string, userId?: strin
 export async function createStockInForPurchaseOrder(
   purchaseOrderId: string,
   userId?: string,
+  exec: DbExecutor = db,
 ) {
-  const [purchaseOrder] = await db
+  const [purchaseOrder] = await exec
     .select()
     .from(purchaseOrders)
     .where(eq(purchaseOrders.id, purchaseOrderId))
@@ -104,7 +111,7 @@ export async function createStockInForPurchaseOrder(
     return
   }
 
-  await db
+  await exec
     .delete(stockMovements)
     .where(
       and(
@@ -114,7 +121,7 @@ export async function createStockInForPurchaseOrder(
       ),
     )
 
-  const lines = await db
+  const lines = await exec
     .select()
     .from(purchaseOrderLines)
     .where(eq(purchaseOrderLines.purchaseOrderId, purchaseOrderId))
@@ -123,7 +130,7 @@ export async function createStockInForPurchaseOrder(
     if (!line.productId) {
       continue
     }
-    await db.insert(stockMovements).values({
+    await exec.insert(stockMovements).values({
       tenantId: purchaseOrder.tenantId,
       productId: line.productId,
       warehouseId: purchaseOrder.warehouseId ?? 'WH-01',
