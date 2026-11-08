@@ -57,6 +57,13 @@
       "when": 1794157120458,
       "tag": "0007_robust_puppet_master",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794162000000,
+      "tag": "0008_missing_indexes",
+      "breakpoints": true
     }
   ]
 }
