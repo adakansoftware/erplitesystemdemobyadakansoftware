@@ -1,7 +1,5 @@
-import createDOMPurify from 'isomorphic-dompurify'
+import DOMPurify from 'isomorphic-dompurify'
 import { createMiddleware } from 'hono/factory'
-
-const DOMPurify = createDOMPurify()
 
 export function sanitizeValue(value: unknown): unknown {
   if (typeof value === 'string') return DOMPurify.sanitize(value)

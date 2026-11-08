@@ -50,6 +50,13 @@
       "when": 1784334000000,
       "tag": "0006_brisk_talon",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794157120458,
+      "tag": "0007_robust_puppet_master",
+      "breakpoints": true
     }
   ]
 }

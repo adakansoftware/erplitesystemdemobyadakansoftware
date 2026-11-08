@@ -1,4 +1,7 @@
 ALTER TABLE "company_settings" ADD COLUMN "tenant_id" uuid;--> statement-breakpoint
+INSERT INTO "tenants" ("slug", "name")
+SELECT 'demo', 'Demo Tenant'
+WHERE NOT EXISTS (SELECT 1 FROM "tenants");--> statement-breakpoint
 UPDATE "company_settings"
 SET "tenant_id" = (
   SELECT "id"

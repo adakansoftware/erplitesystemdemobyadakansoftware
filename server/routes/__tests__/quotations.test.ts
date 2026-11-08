@@ -53,11 +53,11 @@ vi.mock('../../lib/cache', () => ({
 }))
 vi.mock('../../lib/event-bus', () => ({ eventBus: { emit: vi.fn() } }))
 vi.mock('isomorphic-dompurify', () => ({
-  default: () => ({
+  default: {
     sanitize(value: string) {
       return value
     },
-  }),
+  },
 }))
 
 let appModule: Awaited<typeof import('../../app')>

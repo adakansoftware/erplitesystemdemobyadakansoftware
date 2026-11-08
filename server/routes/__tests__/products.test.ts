@@ -54,11 +54,11 @@ vi.mock('../../lib/cache', () => ({
   ),
 }))
 vi.mock('isomorphic-dompurify', () => ({
-  default: () => ({
+  default: {
     sanitize(value: string) {
       return value
     },
-  }),
+  },
 }))
 vi.mock('../../lib/rules', () => ({
   attachProductStocks: vi.fn(async (items: Array<Record<string, unknown>>) =>

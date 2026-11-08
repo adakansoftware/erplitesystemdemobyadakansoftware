@@ -60,11 +60,11 @@ vi.mock('../../lib/rules', () => ({
   attachProductStocks: vi.fn(async (items: Array<Record<string, unknown>>) => items),
 }))
 vi.mock('isomorphic-dompurify', () => ({
-  default: () => ({
+  default: {
     sanitize(value: string) {
       return value
     },
-  }),
+  },
 }))
 
 let appModule: Awaited<typeof import('../../app')>

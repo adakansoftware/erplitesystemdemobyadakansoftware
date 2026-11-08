@@ -27,11 +27,11 @@ vi.mock('../../db/client', () => ({
 
 vi.mock('../../lib/audit', () => ({ audit: vi.fn() }))
 vi.mock('isomorphic-dompurify', () => ({
-  default: () => ({
+  default: {
     sanitize(value: string) {
       return value
     },
-  }),
+  },
 }))
 
 let appModule: Awaited<typeof import('../../app')>

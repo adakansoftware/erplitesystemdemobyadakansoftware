@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('isomorphic-dompurify', () => ({
-  default: () => ({
+  default: {
     sanitize(value: string) {
       return value
         .replace(/<script.*?>.*?<\/script>/gi, '')
@@ -9,7 +9,7 @@ vi.mock('isomorphic-dompurify', () => ({
         .replace(/\son\w+='[^']*'/gi, '')
         .replace(/\son\w+=([^\s>]+)/gi, '')
     },
-  }),
+  },
 }))
 
 import { sanitizeValue } from '../../middleware/sanitize'
